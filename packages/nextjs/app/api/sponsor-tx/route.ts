@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     // Decrypt sponsor wallet
-    let sponsorWallet: Wallet;
+    let sponsorWallet: Awaited<ReturnType<typeof Wallet.fromEncryptedJson>>;
     try {
       sponsorWallet = await Wallet.fromEncryptedJson(encryptedKey, SPONSOR_PASSWORD);
       console.log(`[Sponsor TX] Sponsor wallet ready: ${sponsorWallet.address}`);
