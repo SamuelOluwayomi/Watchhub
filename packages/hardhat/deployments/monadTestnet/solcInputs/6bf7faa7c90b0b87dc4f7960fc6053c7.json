@@ -1,0 +1,36 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/YourContract.sol": {
+      "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.19;\r\n\r\n/// @title WatchHubRating\r\n/// @notice Lets any wallet cast one rating (1-5) per movie, identified by its TMDB movie id.\r\n///         A wallet can update its own rating, but it can never count twice toward the\r\n///         average — this is what makes the score resistant to bot-farming or review\r\n///         manipulation from a single address.\r\ncontract WatchHubRating {\r\n    struct MovieStats {\r\n        uint256 totalScore;   // sum of all current ratings for this movie\r\n        uint256 ratingCount;  // number of distinct wallets that have rated this movie\r\n    }\r\n\r\n    // movieId => aggregate stats\r\n    mapping(uint256 => MovieStats) private stats;\r\n\r\n    // movieId => rater => their current score (0 means \"hasn't rated\")\r\n    mapping(uint256 => mapping(address => uint8)) private userScore;\r\n\r\n    // list of movie ids that have at least one rating, so the frontend can discover them\r\n    uint256[] private ratedMovieIds;\r\n    mapping(uint256 => bool) private isTracked;\r\n\r\n    // user => movie ids they've added to their personal collection\r\n    mapping(address => uint256[]) private userCollection;\r\n    mapping(address => mapping(uint256 => bool)) private inCollection;\r\n\r\n    // user => movie id => watched status\r\n    mapping(address => mapping(uint256 => bool)) private watchedStatus;\r\n\r\n    event MovieRated(address indexed rater, uint256 indexed movieId, uint8 score, bool isUpdate);\r\n    event AddedToCollection(address indexed user, uint256 indexed movieId);\r\n    event WatchedStatusUpdated(address indexed user, uint256 indexed movieId, bool watched);\r\n\r\n    /// @notice Rate a movie from 1 to 5 stars. Calling this again for the same movie\r\n    ///         updates your existing rating instead of adding a second vote.\r\n    function rateMovie(uint256 movieId, uint8 score) external {\r\n        require(score >= 1 && score <= 5, \"Score must be 1-5\");\r\n\r\n        uint8 previousScore = userScore[movieId][msg.sender];\r\n        bool isUpdate = previousScore != 0;\r\n\r\n        MovieStats storage m = stats[movieId];\r\n\r\n        if (isUpdate) {\r\n            m.totalScore = m.totalScore - previousScore + score;\r\n        } else {\r\n            m.totalScore += score;\r\n            m.ratingCount += 1;\r\n\r\n            if (!isTracked[movieId]) {\r\n                isTracked[movieId] = true;\r\n                ratedMovieIds.push(movieId);\r\n            }\r\n        }\r\n\r\n        userScore[movieId][msg.sender] = score;\r\n\r\n        emit MovieRated(msg.sender, movieId, score, isUpdate);\r\n    }\r\n\r\n    /// @notice Average rating scaled by 100 (e.g. 425 means 4.25 stars). Returns 0 if unrated.\r\n    function getAverageRating(uint256 movieId) public view returns (uint256 averageScaled) {\r\n        MovieStats memory m = stats[movieId];\r\n        if (m.ratingCount == 0) return 0;\r\n        return (m.totalScore * 100) / m.ratingCount;\r\n    }\r\n\r\n    /// @notice Convenience getter bundling raw totals and the computed average.\r\n    function getMovieStats(uint256 movieId)\r\n        external\r\n        view\r\n        returns (uint256 totalScore, uint256 ratingCount, uint256 averageScaled)\r\n    {\r\n        MovieStats memory m = stats[movieId];\r\n        return (m.totalScore, m.ratingCount, getAverageRating(movieId));\r\n    }\r\n\r\n    function hasUserRated(uint256 movieId, address user) external view returns (bool) {\r\n        return userScore[movieId][user] != 0;\r\n    }\r\n\r\n    function getUserRating(uint256 movieId, address user) external view returns (uint8) {\r\n        return userScore[movieId][user];\r\n    }\r\n\r\n    /// @notice All movie ids that have at least one onchain rating so far.\r\n    ///         Useful for the frontend to build the \"top rated\" / \"hit movies\" list.\r\n    function getRatedMovieIds() external view returns (uint256[] memory) {\r\n        return ratedMovieIds;\r\n    }\r\n\r\n    function getRatedMovieCount() external view returns (uint256) {\r\n        return ratedMovieIds.length;\r\n    }\r\n\r\n    /// @notice Add a movie to the caller's personal collection. Reverts if already added,\r\n    ///         so it's safe to call from a simple \"Add to collection\" button.\r\n    function addToCollection(uint256 movieId) external {\r\n        require(!inCollection[msg.sender][movieId], \"Already in collection\");\r\n        inCollection[msg.sender][movieId] = true;\r\n        userCollection[msg.sender].push(movieId);\r\n        emit AddedToCollection(msg.sender, movieId);\r\n    }\r\n\r\n    /// @notice Mark (or unmark) a movie as watched for the caller. Independent of\r\n    ///         whether it's in their collection, so users can mark things watched\r\n    ///         without necessarily saving them.\r\n    function markAsWatched(uint256 movieId, bool watched) external {\r\n        watchedStatus[msg.sender][movieId] = watched;\r\n        emit WatchedStatusUpdated(msg.sender, movieId, watched);\r\n    }\r\n\r\n    function isInCollection(address user, uint256 movieId) external view returns (bool) {\r\n        return inCollection[user][movieId];\r\n    }\r\n\r\n    function isWatched(address user, uint256 movieId) external view returns (bool) {\r\n        return watchedStatus[user][movieId];\r\n    }\r\n\r\n    /// @notice Full list of movie ids in a user's personal collection.\r\n    function getUserCollection(address user) external view returns (uint256[] memory) {\r\n        return userCollection[user];\r\n    }\r\n}\r\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "evmVersion": "paris",
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}

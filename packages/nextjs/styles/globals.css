@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme {
+  --shadow-center: 0 0 12px -2px rgb(0 0 0 / 0.05);
+  --animate-pulse-fast: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@plugin "daisyui" {
+  themes:
+    light,
+    dark --prefersdark;
+}
+
+@plugin "daisyui/theme" {
+  name: "light";
+
+  --color-primary: #e50914;
+  --color-primary-content: #ffffff;
+  --color-secondary: #fff0f1;
+  --color-secondary-content: #161313;
+  --color-accent: #111827;
+  --color-accent-content: #ffffff;
+  --color-neutral: #161313;
+  --color-neutral-content: #ffffff;
+  --color-base-100: #ffffff;
+  --color-base-200: #f4f3ef;
+  --color-base-300: #e7e5dd;
+  --color-base-content: #161313;
+  --color-info: #2563eb;
+  --color-success: #0f9f6e;
+  --color-warning: #b45309;
+  --color-error: #e50914;
+
+  --radius-field: 9999rem;
+  --radius-box: 1rem;
+  --tt-tailw: 6px;
+}
+
+@plugin "daisyui/theme" {
+  name: "dark";
+
+  --color-primary: #ff2b35;
+  --color-primary-content: #ffffff;
+  --color-secondary: #2a1113;
+  --color-secondary-content: #fff5f5;
+  --color-accent: #e7e5dd;
+  --color-accent-content: #161313;
+  --color-neutral: #f8f5ef;
+  --color-neutral-content: #151010;
+  --color-base-100: #151010;
+  --color-base-200: #0f0c0c;
+  --color-base-300: #2a2320;
+  --color-base-content: #f8f5ef;
+  --color-info: #60a5fa;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #ff5b63;
+
+  --radius-field: 9999rem;
+  --radius-box: 1rem;
+
+  --tt-tailw: 6px;
+  --tt-bg: var(--color-primary);
+}
+
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+
+  p {
+    margin: 1rem 0;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin-bottom: 0.5rem;
+    line-height: 1;
+  }
+}
+
+:root,
+[data-theme] {
+  background: var(--color-base-200);
+}
+
+.btn {
+  @apply shadow-md;
+}
+
+.btn.btn-ghost {
+  @apply shadow-none;
+}
+
+.link {
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  opacity: 80%;
+}
