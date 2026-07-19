@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
 import { encodeFunctionData } from "viem";
-import { deployedContracts } from "~~/contracts/deployedContracts";
 import { useDeployedContractInfo } from "~~/hooks/scaffold-eth/useDeployedContractInfo";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth/useSelectedNetwork";
 import { notification } from "~~/utils/scaffold-eth";
