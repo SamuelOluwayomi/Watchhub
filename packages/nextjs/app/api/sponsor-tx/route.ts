@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       hash: transactionHash,
       receipt: {
         blockNumber: receipt.blockNumber,
-        transactionHash: receipt.transactionHash,
+        transactionHash: receipt.hash,
         gasUsed: receipt.gasUsed?.toString(),
         status: receipt.status,
       },
