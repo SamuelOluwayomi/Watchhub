@@ -60,7 +60,7 @@ export const useSponsorWrite = () => {
         // Encode the function call using viem
         const data = encodeFunctionData({
           abi,
-          functionName: options.functionName,
+          functionName: options.functionName as any,
           args: callArgs,
         });
 
