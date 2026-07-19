@@ -12,10 +12,12 @@ WatchHub is a movie and series discovery app that solves a real problem: **onlin
 | Feature | Contract Function | Details |
 |---|---|---|
 | Community Rating (1-5 stars) | `rateMovie(movieId, score)` | One active rating per wallet per title — re-voting updates, never inflates |
+| Community Rating (Sponsored) | `rateMovieSponsored(movieId, score, user)` | **Gas-free** — sponsor wallet pays gas while preserving user identity |
 | Onchain average | `getAverageRating(movieId)` | Returns score x 100 (e.g. `425` = 4.25 stars), no floats in Solidity |
 | Full stats | `getMovieStats(movieId)` | Returns total score, vote count, and average in one call |
-| Personal collection | `addToCollection(movieId)` | Saves a title to your wallet's collection |
-| Watched tracking | `markAsWatched(movieId, bool)` | Toggle watched/unwatched, stored per wallet |
+| Personal collection | `addToCollection(movieId)` / `addToCollectionSponsored(movieId, user)` | Saves a title to your wallet's collection (gas-free option available) |
+| Collection removal | `removeFromCollection(movieId)` / `removeFromCollectionSponsored(movieId, user)` | Remove from collection (gas-free option available) |
+| Watched tracking | `markAsWatched(movieId, bool)` / `markAsWatchedSponsored(movieId, bool, user)` | Toggle watched/unwatched (gas-free option available) |
 | Lookup helpers | `hasUserRated`, `getUserRating`, `isInCollection`, `isWatched` | Per-wallet state checks for UI toggles |
 | Discovery | `getRatedMovieIds()`, `getRatedMovieCount()` | Frontend discovers which movies have community votes for the "Top Rated" list |
 
@@ -23,6 +25,12 @@ WatchHub is a movie and series discovery app that solves a real problem: **onlin
 **Contract address:** `0xf4EC4D3f933645953eB62B8800ca3606573B0A31` *(redeploy after changes)*
 
 > **TV vs Movie IDs:** TMDB uses separate numbering spaces for movies and TV. The frontend offsets TV series IDs by `+1_000_000_000` before passing them to the contract to avoid collisions.
+
+### Gas Sponsorship
+- **Zero gas fees for users** — app's sponsor wallet covers gas for rating, collection, and watched operations
+- **Decentralized identity** — user address is preserved in the contract call, even though sponsor wallet pays
+- **Server-side relay** — `/api/sponsor-tx` endpoint uses sponsor wallet to send transactions
+- **Automatic decryption** — sponsor wallet (`0x23ab520f45183bc5c05641aa34c9bff005d27c99`) is decrypted from encrypted keystore on app startup
 
 ### TMDB Data Layer
 - Popular and trending movies & series (`/movie/popular`, `/trending/movie/week`, `/tv/popular`, `/trending/tv/week`)
@@ -55,6 +63,7 @@ WatchHub is a movie and series discovery app that solves a real problem: **onlin
 | Scaffold | scaffold-monad-hardhat (Scaffold-ETH 2 adapted for Monad) |
 | Frontend | Next.js (App Router) · TypeScript |
 | Web3 | Wagmi · Viem · RainbowKit |
+| Gas Sponsorship | ethers.js (Keystore v3 decryption) · Server-side tx relay |
 | Movie Data | TMDB API (server-proxied) |
 | Styling | Tailwind CSS v4 · DaisyUI |
 | Comments *(planned)* | Supabase (wallet-gated, off-chain) |
@@ -77,14 +86,28 @@ yarn install
 
 ### 2. Configure environment variables
 
-Create `packages/nextjs/.env.local`:
+**For the Next.js frontend, create `packages/nextjs/.env.local`:**
 
 ```env
+# TMDB API (required for movie data)
 TMDB_API_KEY=your_tmdb_api_key_here
+TMDB_API_READ_ACCESS_TOKEN=optional_bearer_token
+
+# Wallet & Chain (optional, defaults provided)
 NEXT_PUBLIC_ALCHEMY_API_KEY=optional_alchemy_key
+NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=optional_walletconnect_id
 ```
 
 Get a free TMDB API key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api).
+
+**For the Hardhat contract layer, `packages/hardhat/.env` is pre-configured** with the sponsor wallet's encrypted private key. To redeploy the contract:
+
+```env
+DEPLOYER_PRIVATE_KEY_ENCRYPTED=[encrypted keystore JSON]
+ALCHEMY_API_KEY=optional_key_for_rpc
+```
+
+The sponsor wallet address (`0x23ab520f45183bc5c05641aa34c9bff005d27c99`) is automatically decrypted with password `12345` on app startup.
 
 ### 3. Start the frontend
 
@@ -113,18 +136,30 @@ moviehub/
 │   │   ├── contracts/
 │   │   │   └── WatchHubRating.sol      # Core onchain rating + collection + watched contract
 │   │   ├── deploy/                     # Hardhat deploy scripts
+│   │   ├── .env                        # Encrypted sponsor wallet private key
 │   │   └── hardhat.config.ts           # Monad Testnet + Sourcify config
 │   └── nextjs/
 │       ├── app/
 │       │   ├── page.tsx                # Main WatchHub UI (home / explore)
 │       │   ├── layout.tsx              # App layout + providers
 │       │   └── api/
+│       │       ├── sponsor-tx/         # Server-side gas sponsorship relay
+│       │       ├── reviews/            # User review storage
 │       │       └── tmdb/
-│       │           └── watchhub/       # Server-side TMDB proxy route
+│       │           ├── details/        # TMDB title details proxy
+│       │           └── watchhub/       # Server-side TMDB data aggregation
 │       ├── components/
 │       │   ├── SwitchTheme.tsx         # Light/dark mode toggle
+│       │   ├── ScaffoldEthAppWithProviders.tsx  # App providers + SponsorWalletProvider
 │       │   └── scaffold-eth/           # RainbowKit connect button + scaffold hooks
-│       ├── hooks/scaffold-eth/         # useScaffoldReadContract / useScaffoldWriteContract
+│       ├── contexts/
+│       │   └── SponsorWalletContext.tsx # Gas sponsorship wallet context
+│       ├── hooks/scaffold-eth/
+│       │   ├── useSponsorWrite.ts      # Hook for gas-sponsored contract writes
+│       │   └── [other scaffold hooks]  # useScaffoldReadContract, etc.
+│       ├── utils/
+│       │   ├── sponsor-wallet.ts       # Sponsor wallet decryption utilities
+│       │   └── [other utilities]
 │       ├── styles/globals.css          # Tailwind v4 + DaisyUI theme tokens
 │       └── scaffold.config.ts          # Target network = Monad Testnet
 ```
@@ -135,8 +170,9 @@ moviehub/
 
 ### Ratings
 ```solidity
-function rateMovie(uint256 movieId, uint8 score) external;           // 1-5, one per wallet
-function getAverageRating(uint256 movieId) external view returns (uint256); // x 100
+function rateMovie(uint256 movieId, uint8 score) external;                    // 1-5, one per wallet
+function rateMovieSponsored(uint256 movieId, uint8 score, address user) external;  // Gas-free (sponsor pays)
+function getAverageRating(uint256 movieId) external view returns (uint256);   // x 100
 function getMovieStats(uint256 movieId) external view returns (uint256 totalScore, uint256 count, uint256 average);
 function hasUserRated(address user, uint256 movieId) external view returns (bool);
 function getUserRating(address user, uint256 movieId) external view returns (uint8);
@@ -146,6 +182,9 @@ function getRatedMovieIds() external view returns (uint256[] memory);
 ### Collection
 ```solidity
 function addToCollection(uint256 movieId) external;
+function addToCollectionSponsored(uint256 movieId, address user) external;    // Gas-free (sponsor pays)
+function removeFromCollection(uint256 movieId) external;
+function removeFromCollectionSponsored(uint256 movieId, address user) external;  // Gas-free (sponsor pays)
 function isInCollection(address user, uint256 movieId) external view returns (bool);
 function getUserCollection(address user) external view returns (uint256[] memory);
 ```
@@ -153,6 +192,7 @@ function getUserCollection(address user) external view returns (uint256[] memory
 ### Watched
 ```solidity
 function markAsWatched(uint256 movieId, bool watched) external;
+function markAsWatchedSponsored(uint256 movieId, bool watched, address user) external;  // Gas-free (sponsor pays)
 function isWatched(address user, uint256 movieId) external view returns (bool);
 ```
 
@@ -160,7 +200,8 @@ function isWatched(address user, uint256 movieId) external view returns (bool);
 ```solidity
 event MovieRated(address indexed user, uint256 indexed movieId, uint8 score);
 event AddedToCollection(address indexed user, uint256 indexed movieId);
-event WatchedStatusUpdated(address indexed user, indexed movieId, bool watched);
+event RemovedFromCollection(address indexed user, uint256 indexed movieId);
+event WatchedStatusUpdated(address indexed user, uint256 indexed movieId, bool watched);
 ```
 
 ---
@@ -181,6 +222,51 @@ sourcify: {
   browserUrl: "https://testnet.monadexplorer.com",
 },
 ```
+
+---
+
+## Gas Sponsorship Setup
+
+WatchHub uses **gas-free transactions** for users by relaying all writes through a sponsor wallet.
+
+### How It Works
+
+1. **User connects wallet** → MetaMask/Rainbow Kit (standard Web3 flow)
+2. **User rates/bookmarks/marks watched** → Frontend calls `useSponsorWrite()` hook
+3. **Hook encodes call** → Buildsa contract function call with user's address as parameter
+4. **Server-side relay** → `/api/sponsor-tx` endpoint receives the encoded call
+5. **Sponsor wallet sends tx** → Server decrypts sponsor wallet from `DEPLOYER_PRIVATE_KEY_ENCRYPTED`, signs & sends on Monad
+6. **User address preserved** → Sponsor functions (`rateMovieSponsored`, `addToCollectionSponsored`, etc.) record the *user's* address, not sponsor's
+
+### Environment Setup for Deployment
+
+**The sponsor wallet is pre-configured**, but you can verify/update it:
+
+1. **Check `packages/hardhat/.env`:**
+   ```
+   DEPLOYER_PRIVATE_KEY_ENCRYPTED=[encrypted keystore]
+   ```
+
+2. **Verify sponsor has MON tokens** for gas:
+   ```bash
+   # Sponsor wallet address:
+   0x23ab520f45183bc5c05641aa34c9bff005d27c99
+   ```
+   Get MON from the faucet: https://testnet-faucet.monad.xyz
+
+3. **Decryption happens automatically** via `SponsorWalletContext`:
+   - Password: `12345` (hardcoded for hackathon; move to secure secret manager for production)
+   - Wallet decrypts on app startup
+   - Available to `/api/sponsor-tx` for relay
+
+### For Production
+
+Before deploying to mainnet/production:
+- Move sponsor wallet password to environment variables or AWS Secrets Manager
+- Add signature verification to prevent unauthorized relay calls
+- Implement rate limiting on `/api/sponsor-tx`
+- Consider a separate "paymaster" or "relayer" service
+- Audit the sponsor wallet security model
 
 ---
 

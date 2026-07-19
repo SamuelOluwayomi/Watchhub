@@ -3516,6 +3516,7 @@ __metadata:
     eslint-config-next: ~15.3.9
     eslint-config-prettier: ~10.1.1
     eslint-plugin-prettier: ~5.2.4
+    ethers: ~6.13.2
     kubo-rpc-client: ~5.0.2
     next: ~15.3.9
     next-nprogress-bar: ~2.3.13

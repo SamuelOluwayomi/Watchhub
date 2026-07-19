@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { JsonRpcProvider, Wallet, Contract, AbiCoder } from "ethers";
-import { getEncryptedDeployerKey, createSponsorWallet } from "~~/utils/sponsor-wallet";
+import { Wallet, JsonRpcProvider } from "ethers";
 
 const MONAD_TESTNET_RPC = "https://testnet-rpc.monad.xyz";
 const MONAD_TESTNET_ID = 10143;
+const SPONSOR_PASSWORD = "12345"; // TODO: Move to secure secret management
 
 type SponsoredTransactionRequest = {
   to: string;
@@ -38,17 +38,35 @@ export async function POST(request: Request) {
       );
     }
 
-    // Initialize sponsor wallet
-    const encryptedKey = getEncryptedDeployerKey();
-    const password = "12345"; // TODO: Move to secure secret management
-    const sponsorWallet = await createSponsorWallet(encryptedKey, password);
+    // Get encrypted key from environment
+    const encryptedKey = process.env.DEPLOYER_PRIVATE_KEY_ENCRYPTED;
+    if (!encryptedKey) {
+      console.error("[Sponsor TX] Missing DEPLOYER_PRIVATE_KEY_ENCRYPTED");
+      return NextResponse.json(
+        { error: "Sponsor wallet not configured" },
+        { status: 500 },
+      );
+    }
+
+    // Decrypt sponsor wallet
+    let sponsorWallet: Wallet;
+    try {
+      sponsorWallet = await Wallet.fromEncryptedJson(encryptedKey, SPONSOR_PASSWORD);
+      console.log(`[Sponsor TX] Sponsor wallet ready: ${sponsorWallet.address}`);
+    } catch (decryptError) {
+      console.error("[Sponsor TX] Failed to decrypt wallet:", decryptError);
+      return NextResponse.json(
+        { error: "Failed to access sponsor wallet" },
+        { status: 500 },
+      );
+    }
 
     // Connect to Monad Testnet
     const provider = new JsonRpcProvider(MONAD_TESTNET_RPC, {
       chainId: MONAD_TESTNET_ID,
       name: "monad-testnet",
     });
-    const signer = new Wallet(sponsorWallet.privateKey, provider);
+    const signer = sponsorWallet.connect(provider);
 
     // Prepare and send transaction
     const tx = {
@@ -65,7 +83,7 @@ export async function POST(request: Request) {
 
     console.log(`[Sponsor TX] Hash: ${transactionHash}`);
 
-    // Optional: Wait for receipt (can be async later)
+    // Wait for receipt
     const receipt = await transactionResponse.wait();
 
     if (!receipt || receipt.status === 0) {
@@ -94,3 +112,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

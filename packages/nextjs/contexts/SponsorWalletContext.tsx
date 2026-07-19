@@ -1,51 +1,59 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { Wallet } from "ethers";
-import { createSponsorWallet, getEncryptedDeployerKey, validateSponsorWallet } from "~~/utils/sponsor-wallet";
+import { SPONSOR_WALLET_ADDRESS } from "~~/utils/sponsor-wallet";
 
 type SponsorWalletContextType = {
-  wallet: Wallet | null;
   isReady: boolean;
+  isAvailable: boolean;
+  address: string;
   error: string | null;
-  address: string | null;
 };
 
 const SponsorWalletContext = createContext<SponsorWalletContextType | undefined>(undefined);
 
 export const SponsorWalletProvider = ({ children }: { children: ReactNode }) => {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const initializeSponsorWallet = async () => {
+    const checkSponsorAvailability = async () => {
       try {
-        const encryptedKey = getEncryptedDeployerKey();
-        // Use hardcoded password for now - in production, this should come from a secure source
-        const password = "12345";
-        const sponsorWallet = await createSponsorWallet(encryptedKey, password);
-        validateSponsorWallet(sponsorWallet, "23ab520f45183bc5c05641aa34c9bff005d27c99");
-        setWallet(sponsorWallet);
-        setIsReady(true);
+        // Test if the sponsor tx endpoint is available
+        const response = await fetch("/api/sponsor-tx", {
+          method: "OPTIONS",
+        }).catch(() => null);
+
+        // If we get any response (or a CORS error), the endpoint exists
+        const available = response !== null;
+        setIsAvailable(available);
+
+        if (available) {
+          console.log("✓ Gas sponsor system ready");
+          console.log(`  Sponsor wallet: ${SPONSOR_WALLET_ADDRESS}`);
+        } else {
+          console.warn("⚠ Gas sponsor endpoint not available");
+        }
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Unknown error initializing sponsor wallet";
-        console.error("Sponsor wallet error:", errorMessage);
+        const errorMessage = err instanceof Error ? err.message : "Unknown error checking sponsor availability";
+        console.error("Sponsor availability check:", errorMessage);
         setError(errorMessage);
-        setIsReady(true); // Mark as ready even on error so app can continue
+      } finally {
+        setIsReady(true);
       }
     };
 
-    initializeSponsorWallet();
+    checkSponsorAvailability();
   }, []);
 
   return (
     <SponsorWalletContext.Provider
       value={{
-        wallet,
         isReady,
+        isAvailable,
+        address: SPONSOR_WALLET_ADDRESS,
         error,
-        address: wallet?.address || null,
       }}
     >
       {children}

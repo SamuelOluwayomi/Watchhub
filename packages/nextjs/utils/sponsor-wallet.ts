@@ -1,29 +1,5 @@
-import { Wallet } from "ethers";
-
 /**
- * Decrypts the sponsor wallet private key from encrypted keystore
- * @param encryptedJson - The encrypted keystore JSON string (from .env)
- * @param password - The password to decrypt
- * @returns The sponsor wallet instance
- */
-export async function createSponsorWallet(
-  encryptedJson: string,
-  password: string,
-): Promise<Wallet> {
-  try {
-    const wallet = await Wallet.fromEncryptedJson(encryptedJson, password);
-    console.log("✓ Sponsor wallet decrypted successfully");
-    console.log(`  Address: ${wallet.address}`);
-    return wallet;
-  } catch (error) {
-    throw new Error(
-      `Failed to decrypt sponsor wallet: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-}
-
-/**
- * Gets the encrypted deployer private key from environment
+ * Gets the encrypted deployer private key from environment (server-side only)
  * @returns The encrypted keystore JSON string
  */
 export function getEncryptedDeployerKey(): string {
@@ -37,17 +13,15 @@ export function getEncryptedDeployerKey(): string {
 }
 
 /**
- * Validates that the sponsor wallet has the expected address
- * @param wallet - The wallet to validate
- * @param expectedAddress - The expected address (from encrypted key metadata)
- * @returns true if addresses match
+ * Sponsor wallet address - public and safe to expose
  */
-export function validateSponsorWallet(wallet: Wallet, expectedAddress?: string): boolean {
-  if (expectedAddress && wallet.address.toLowerCase() !== expectedAddress.toLowerCase()) {
-    console.warn(
-      `⚠ Sponsor wallet address mismatch: ${wallet.address} != ${expectedAddress}`,
-    );
-    return false;
-  }
-  return true;
+export const SPONSOR_WALLET_ADDRESS = "0x23ab520f45183bc5c05641aa34c9bff005d27c99";
+
+/**
+ * Validates an address format
+ * @param address - Address to validate
+ * @returns true if valid Ethereum address
+ */
+export function isValidAddress(address: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
 }

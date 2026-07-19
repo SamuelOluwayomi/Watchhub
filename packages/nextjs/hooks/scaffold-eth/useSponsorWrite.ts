@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
-import { Contract, toBeHex } from "ethers";
+import { encodeFunctionData } from "viem";
 import { deployedContracts } from "~~/contracts/deployedContracts";
 import { useDeployedContractInfo } from "~~/hooks/scaffold-eth/useDeployedContractInfo";
-import { useSelectedNetwork } from "~~/hooks/scaffold-eth/useNetwork";
+import { useSelectedNetwork } from "~~/hooks/scaffold-eth/useSelectedNetwork";
 import { notification } from "~~/utils/scaffold-eth";
 
 const SPONSOR_TX_ENDPOINT = "/api/sponsor-tx";
@@ -45,9 +45,6 @@ export const useSponsorWrite = () => {
         // Get the contract ABI
         const abi = contractInfo.abi;
 
-        // Create contract interface to encode function call
-        const contract = new Contract(contractInfo.address, abi);
-
         // Build the function arguments including user address for sponsored calls
         let callArgs = options.args;
         if (
@@ -61,8 +58,12 @@ export const useSponsorWrite = () => {
           callArgs = [...options.args, userAddress];
         }
 
-        // Encode the function call
-        const data = contract.interface.encodeFunctionData(options.functionName, callArgs);
+        // Encode the function call using viem
+        const data = encodeFunctionData({
+          abi,
+          functionName: options.functionName,
+          args: callArgs,
+        });
 
         notificationId = notification.loading("Sending sponsored transaction...");
 
