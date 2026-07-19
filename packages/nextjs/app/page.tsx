@@ -236,7 +236,10 @@ const CardRatingButton = ({
         aria-label={`Rate ${title}`}
         aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen(prev => !prev)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(prev => !prev);
+        }}
         className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-md transition hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
       >
         <StarIcon className="size-3.5" aria-hidden="true" />
@@ -250,7 +253,10 @@ const CardRatingButton = ({
           <div
             className="fixed inset-0 z-30"
             aria-hidden="true"
-            onClick={() => setOpen(false)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(false);
+            }}
           />
           <div
             role="dialog"
@@ -266,7 +272,10 @@ const CardRatingButton = ({
                   disabled={disabled}
                   onMouseEnter={() => setHovered(star)}
                   onMouseLeave={() => setHovered(0)}
-                  onClick={() => handleSelect(star)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelect(star);
+                  }}
                   className="p-1 transition-transform hover:scale-125 will-change-transform disabled:cursor-not-allowed focus-visible:outline-none"
                 >
                   <StarIcon
@@ -295,6 +304,10 @@ const Home: NextPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState(0);
 
+  // Dynamic selection state
+  const [selectedFeatured, setSelectedFeatured] = useState<WatchHubFeatured | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
   // Onchain collection / watched local toggle state (optimistic)
   const [inCollection, setInCollection] = useState(false);
   const [isWatchedLocal, setIsWatchedLocal] = useState(false);
@@ -308,7 +321,44 @@ const Home: NextPage = () => {
   const [reviewSuccess, setReviewSuccess] = useState(false);
   const reviewTextRef = useRef<HTMLTextAreaElement>(null);
 
-  const featuredContractId = useMemo(() => BigInt(data?.featured.contractId || "0"), [data?.featured.contractId]);
+  // AI Recommendation modal states
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState<WatchHubItem[]>([]);
+  const [aiReasoning, setAiReasoning] = useState("");
+
+  const getAiRecommendations = async () => {
+    if (!aiPrompt.trim() || !data) return;
+    setAiLoading(true);
+    try {
+      const pool = [...data.recommendations, ...data.continueWatching, data.featured];
+      const seen = new Set();
+      const uniquePool = pool.filter(item => {
+        const key = `${item.mediaType}-${item.tmdbId}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const res = await fetch("/api/ai/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt.trim(), items: uniquePool }),
+      });
+      const payload = await res.json();
+      if (res.ok) {
+        setAiRecommendations(payload.recommendations || []);
+        setAiReasoning(payload.reasoning || "");
+      }
+    } catch {
+      // ignore
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const featuredContractId = useMemo(() => BigInt(selectedFeatured?.contractId || data?.featured.contractId || "0"), [selectedFeatured?.contractId, data?.featured.contractId]);
 
   const { writeContractAsync, isMining } = useScaffoldWriteContract({
     contractName: "WatchHubRating",
@@ -320,8 +370,32 @@ const Home: NextPage = () => {
     functionName: "getMovieStats",
     args: [featuredContractId],
     chainId: MONAD_TESTNET_ID,
-    query: { enabled: Boolean(data?.featured) },
+    query: { enabled: Boolean(selectedFeatured || data?.featured) },
   });
+
+  const { data: onchainInCollection } = useScaffoldReadContract({
+    contractName: "WatchHubRating",
+    functionName: "isInCollection",
+    args: [connectedAddress, featuredContractId],
+    chainId: MONAD_TESTNET_ID,
+    query: { enabled: Boolean(connectedAddress && featuredContractId) },
+  });
+
+  const { data: onchainIsWatched } = useScaffoldReadContract({
+    contractName: "WatchHubRating",
+    functionName: "isWatched",
+    args: [connectedAddress, featuredContractId],
+    chainId: MONAD_TESTNET_ID,
+    query: { enabled: Boolean(connectedAddress && featuredContractId) },
+  });
+
+  useEffect(() => {
+    setInCollection(Boolean(onchainInCollection));
+  }, [onchainInCollection]);
+
+  useEffect(() => {
+    setIsWatchedLocal(Boolean(onchainIsWatched));
+  }, [onchainIsWatched]);
 
   const loadWatchHub = async () => {
     try {
@@ -340,6 +414,34 @@ const Home: NextPage = () => {
 
   useEffect(() => { loadWatchHub(); }, []);
 
+  useEffect(() => {
+    if (data?.featured) {
+      setSelectedFeatured(data.featured);
+    }
+  }, [data]);
+
+  const selectTitle = async (tmdbId: number, mediaType: "movie" | "tv") => {
+    setDetailsLoading(true);
+    try {
+      const res = await fetch(`/api/tmdb/details?id=${tmdbId}&mediaType=${mediaType}`);
+      const payload = await res.json();
+      if (res.ok && payload.details) {
+        setSelectedFeatured(payload.details);
+        // Scroll smoothly to top of viewport/main content area
+        const container = document.getElementById("main-content-scroll");
+        if (container) {
+          container.scrollTo({ top: 0, behavior: "smooth" });
+        } else {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
   const fetchReviews = useCallback(async (contractId: string) => {
     setReviewsLoading(true);
     try {
@@ -354,8 +456,9 @@ const Home: NextPage = () => {
   }, []);
 
   useEffect(() => {
-    if (data?.featured?.contractId) {
-      fetchReviews(data.featured.contractId);
+    const activeId = selectedFeatured?.contractId || data?.featured?.contractId;
+    if (activeId) {
+      fetchReviews(activeId);
       // reset optimistic toggle state when featured title changes
       setInCollection(false);
       setIsWatchedLocal(false);
@@ -363,7 +466,7 @@ const Home: NextPage = () => {
       setReviewError(null);
       setReviewSuccess(false);
     }
-  }, [data?.featured?.contractId, fetchReviews]);
+  }, [selectedFeatured?.contractId, data?.featured?.contractId, fetchReviews]);
 
   const writeRating = async (contractId: string, score: number) => {
     await writeContractAsync({ functionName: "rateMovie", args: [BigInt(contractId), score] });
@@ -452,7 +555,7 @@ const Home: NextPage = () => {
     );
   }
 
-  const { featured } = data;
+  const featured = selectedFeatured || data.featured;
   const watchHubScore = movieStats ? formatScore(movieStats[2]) : "New";
   const ratingCount = movieStats ? Number(movieStats[1]) : 0;
   const featureMeta = [featured.year, featured.runtime, featured.genres[0], `TMDB ${featured.tmdbRating || "N/A"}`].filter(Boolean);
@@ -531,6 +634,7 @@ const Home: NextPage = () => {
                 {data.continueWatching.map(item => (
                   <button
                     key={`${item.mediaType}-${item.tmdbId}`}
+                    onClick={() => selectTitle(item.tmdbId, item.mediaType)}
                     className="grid min-h-12 w-full grid-cols-[48px_minmax(0,1fr)_32px] items-center gap-3 text-left focus-visible:outline-2 focus-visible:outline-primary rounded-xl p-1 hover:bg-base-200 transition"
                   >
                     <MediaImage src={item.posterUrl} alt="" className="h-12 w-12 rounded-xl object-cover" />
@@ -631,16 +735,18 @@ const Home: NextPage = () => {
           </div>
 
           {/* Scrollable page body */}
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pb-24 lg:pb-6">
+          <main id="main-content-scroll" className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pb-24 lg:pb-6">
 
             {/* ── Hero / Featured ── */}
             <section className="relative isolate overflow-hidden rounded-3xl bg-neutral text-white min-h-[340px] sm:min-h-[420px]">
-              {/* Mining indicator overlay */}
-              {isMining && (
+            {/* Mining or Loading indicator overlay */}
+              {(isMining || detailsLoading) && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 rounded-3xl">
                   <div className="flex flex-col items-center gap-3">
                     <div className="size-10 rounded-full border-4 border-primary border-t-transparent animate-spin will-change-transform" />
-                    <p className="text-sm font-bold text-white">Submitting to Monad…</p>
+                    <p className="text-sm font-bold text-white">
+                      {isMining ? "Submitting to Monad…" : "Loading details…"}
+                    </p>
                   </div>
                 </div>
               )}
@@ -800,7 +906,8 @@ const Home: NextPage = () => {
                 {data.recommendations.slice(0, 8).map(item => (
                   <article
                     key={`${item.mediaType}-${item.tmdbId}`}
-                    className="group overflow-hidden rounded-2xl bg-neutral text-white will-change-transform"
+                    onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                    className="group overflow-hidden rounded-2xl bg-neutral text-white will-change-transform cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
                   >
                     <div className="relative aspect-[1.42] overflow-hidden">
                       <MediaImage
@@ -984,7 +1091,15 @@ const Home: NextPage = () => {
                   </p>
                 </div>
               </div>
-              <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-neutral px-6 text-sm font-bold text-neutral-content transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              <button
+                onClick={() => {
+                  setAiPrompt("");
+                  setAiRecommendations([]);
+                  setAiReasoning("");
+                  setAiModalOpen(true);
+                }}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-neutral px-6 text-sm font-bold text-neutral-content transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
                 <TvIcon className="size-5" aria-hidden="true" />
                 Recommend
               </button>
@@ -1036,6 +1151,104 @@ const Home: NextPage = () => {
           <span className="text-[10px] font-bold">Debug</span>
         </Link>
       </nav>
+
+      {/* ══════ AI RECOMMENDATION MODAL ══════ */}
+      {aiModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          {/* Backdrop click to close */}
+          <div className="absolute inset-0" onClick={() => setAiModalOpen(false)} />
+          
+          <div className="relative z-10 w-full max-w-lg rounded-3xl bg-base-100 p-6 shadow-2xl border border-base-300 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-content animate-pulse">
+                  <SparklesIcon className="size-5" aria-hidden="true" />
+                </span>
+                <h2 className="text-lg font-black text-neutral">AI Recommendation</h2>
+              </div>
+              <button 
+                onClick={() => setAiModalOpen(false)}
+                className="grid size-8 place-items-center rounded-full bg-base-200 text-neutral hover:bg-base-300 transition font-bold"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs font-semibold text-neutral/60 mb-4 leading-relaxed">
+              Describe what kind of movie or series you're in the mood for. Our AI mood engine parses title keywords, synopses, and genres.
+            </p>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={aiPrompt}
+                onChange={e => setAiPrompt(e.target.value)}
+                placeholder="e.g. funny cartoon, scary spaceship movie, thriller series..."
+                className="flex-1 h-11 rounded-full border border-base-300 bg-base-200 px-4 text-sm font-medium text-neutral focus:border-primary focus:bg-base-100 focus:outline-none focus:ring-2 focus:ring-primary/25 transition"
+                onKeyDown={e => {
+                  if (e.key === "Enter") getAiRecommendations();
+                }}
+              />
+              <button
+                onClick={getAiRecommendations}
+                disabled={aiLoading || !aiPrompt.trim()}
+                className="h-11 rounded-full bg-primary px-5 text-sm font-bold text-primary-content transition hover:opacity-90 disabled:opacity-50"
+              >
+                {aiLoading ? "Searching..." : "Ask AI"}
+              </button>
+            </div>
+
+            {/* AI Results */}
+            <div className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4 pr-1">
+              {aiRecommendations.length > 0 && (
+                <div className="rounded-2xl bg-base-200 p-4 border border-base-300">
+                  <p className="text-xs font-semibold text-neutral/70 italic leading-relaxed">
+                    ✨ {aiReasoning}
+                  </p>
+                </div>
+              )}
+
+              {aiRecommendations.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-neutral/50 uppercase tracking-wider">Top Matches</p>
+                  {aiRecommendations.map(item => (
+                    <button
+                      key={`${item.mediaType}-${item.tmdbId}`}
+                      onClick={() => {
+                        selectTitle(item.tmdbId, item.mediaType);
+                        setAiModalOpen(false);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-2xl border border-base-300 bg-base-100 p-2 hover:bg-base-200 transition text-left focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      <MediaImage src={item.posterUrl} alt="" className="h-14 w-10 rounded-lg object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-neutral">{item.title}</span>
+                        <span className="block text-xs font-semibold text-neutral/55">
+                          {item.year} • {item.typeLabel} • TMDB {item.tmdbRating}
+                        </span>
+                      </div>
+                      <span className="grid size-8 place-items-center rounded-full bg-base-200 text-primary">
+                        <PlayIcon className="size-4" aria-hidden="true" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : aiLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3">
+                  <div className="size-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+                  <p className="text-xs font-bold text-neutral/50">Consulting WatchHub oracle...</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-center text-neutral/40">
+                  <SparklesIcon className="size-10 text-neutral/20 mb-2 animate-pulse" />
+                  <p className="text-sm font-bold">Waiting for your mood...</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
