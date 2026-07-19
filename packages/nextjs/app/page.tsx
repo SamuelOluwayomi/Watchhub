@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { NextPage } from "next";
@@ -66,6 +66,15 @@ type WatchHubData = {
   continueWatching: WatchHubItem[];
   categories: string[];
   attribution: string;
+};
+
+type CommunityReview = {
+  id: string;
+  movie_id: string;
+  wallet_address: string;
+  content: string;
+  movie_title: string;
+  created_at: string;
 };
 
 const formatScore = (averageScaled?: bigint) => {
@@ -286,6 +295,19 @@ const Home: NextPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState(0);
 
+  // Onchain collection / watched local toggle state (optimistic)
+  const [inCollection, setInCollection] = useState(false);
+  const [isWatchedLocal, setIsWatchedLocal] = useState(false);
+
+  // Community reviews (Supabase)
+  const [reviews, setReviews] = useState<CommunityReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
+  const reviewTextRef = useRef<HTMLTextAreaElement>(null);
+
   const featuredContractId = useMemo(() => BigInt(data?.featured.contractId || "0"), [data?.featured.contractId]);
 
   const { writeContractAsync, isMining } = useScaffoldWriteContract({
@@ -318,14 +340,82 @@ const Home: NextPage = () => {
 
   useEffect(() => { loadWatchHub(); }, []);
 
+  const fetchReviews = useCallback(async (contractId: string) => {
+    setReviewsLoading(true);
+    try {
+      const res = await fetch(`/api/reviews?movieId=${encodeURIComponent(contractId)}`);
+      const payload = await res.json();
+      setReviews(payload.reviews || []);
+    } catch {
+      // non-fatal — just show empty state
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (data?.featured?.contractId) {
+      fetchReviews(data.featured.contractId);
+      // reset optimistic toggle state when featured title changes
+      setInCollection(false);
+      setIsWatchedLocal(false);
+      setReviewText("");
+      setReviewError(null);
+      setReviewSuccess(false);
+    }
+  }, [data?.featured?.contractId, fetchReviews]);
+
   const writeRating = async (contractId: string, score: number) => {
     await writeContractAsync({ functionName: "rateMovie", args: [BigInt(contractId), score] });
   };
   const addToCollection = async (contractId: string) => {
-    await writeContractAsync({ functionName: "addToCollection", args: [BigInt(contractId)] });
+    try {
+      if (inCollection) {
+        await writeContractAsync({ functionName: "removeFromCollection", args: [BigInt(contractId)] });
+        setInCollection(false);
+      } else {
+        await writeContractAsync({ functionName: "addToCollection", args: [BigInt(contractId)] });
+        setInCollection(true);
+      }
+    } catch {
+      // scaffold-eth shows toast on error
+    }
   };
   const markWatched = async (contractId: string) => {
-    await writeContractAsync({ functionName: "markAsWatched", args: [BigInt(contractId), true] });
+    try {
+      await writeContractAsync({ functionName: "markAsWatched", args: [BigInt(contractId), !isWatchedLocal] });
+      setIsWatchedLocal(prev => !prev);
+    } catch {
+      // scaffold-eth shows toast on error
+    }
+  };
+
+  const submitReview = async () => {
+    if (!connectedAddress || !data?.featured || reviewText.trim().length < 10) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          movieId: data.featured.contractId,
+          walletAddress: connectedAddress,
+          content: reviewText.trim(),
+          movieTitle: data.featured.title,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.message || "Failed to submit review");
+      setReviewText("");
+      setReviewSuccess(true);
+      setTimeout(() => setReviewSuccess(false), 4000);
+      await fetchReviews(data.featured.contractId);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Failed to submit review");
+    } finally {
+      setReviewSubmitting(false);
+    }
   };
 
   if (isLoading) return <DashboardSkeleton />;
@@ -581,19 +671,25 @@ const Home: NextPage = () => {
                 <div className="mt-4 flex flex-wrap gap-3">
                   <button
                     onClick={() => addToCollection(featured.contractId)}
-                    disabled={isMining}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/14 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isMining || !connectedAddress}
+                    title={!connectedAddress ? "Connect wallet to save" : undefined}
+                    className={`inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-bold backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60 ${
+                      inCollection ? "bg-primary text-white" : "bg-white/14 text-white"
+                    }`}
                   >
                     <BookmarkIcon className="size-5" aria-hidden="true" />
-                    Collection
+                    {inCollection ? "Saved" : "Collection"}
                   </button>
                   <button
                     onClick={() => markWatched(featured.contractId)}
-                    disabled={isMining}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/14 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isMining || !connectedAddress}
+                    title={!connectedAddress ? "Connect wallet to mark watched" : undefined}
+                    className={`inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-bold backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60 ${
+                      isWatchedLocal ? "bg-green-500 text-white" : "bg-white/14 text-white"
+                    }`}
                   >
                     <CheckCircleIcon className="size-5" aria-hidden="true" />
-                    Watched
+                    {isWatchedLocal ? "Watched ✓" : "Mark Watched"}
                   </button>
                 </div>
               </div>
@@ -798,29 +894,78 @@ const Home: NextPage = () => {
                     <span className="text-xs font-semibold text-neutral/40">Wallet-gated</span>
                   </div>
 
-                  {/* Empty state — community comments not yet implemented */}
-                  <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
-                    <div className="grid size-14 place-items-center rounded-full bg-base-200">
-                      <ChatBubbleLeftRightIcon className="size-7 text-neutral/25" aria-hidden="true" />
+                  {/* Review submit form */}
+                  {connectedAddress ? (
+                    <div className="mb-4">
+                      <label className="sr-only" htmlFor="review-input">Write a community review</label>
+                      <textarea
+                        id="review-input"
+                        ref={reviewTextRef}
+                        value={reviewText}
+                        onChange={e => setReviewText(e.target.value)}
+                        placeholder={`Share your thoughts on ${featured.title}… (min 10 characters)`}
+                        rows={3}
+                        maxLength={1000}
+                        className="w-full resize-none rounded-2xl border border-base-300 bg-base-200 p-3 text-sm font-medium text-neutral placeholder:text-neutral/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+                      />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-neutral/40">{reviewText.length}/1000</span>
+                        <button
+                          onClick={submitReview}
+                          disabled={reviewSubmitting || reviewText.trim().length < 10}
+                          className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-content transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <ChatBubbleLeftRightIcon className="size-3.5" aria-hidden="true" />
+                          {reviewSubmitting ? "Posting…" : "Post review"}
+                        </button>
+                      </div>
+                      {reviewError && (
+                        <p className="mt-2 text-xs font-bold text-error">{reviewError}</p>
+                      )}
+                      {reviewSuccess && (
+                        <p className="mt-2 text-xs font-bold text-success">Review posted! 🎉</p>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-sm font-black text-neutral/40">No community reviews yet</p>
-                      <p className="mt-1 text-xs font-semibold text-neutral/30 max-w-52 mx-auto leading-relaxed">
-                        Connect your wallet to leave the first review for this title.
-                      </p>
-                    </div>
-                    {connectedAddress ? (
-                      <button
-                        disabled
-                        className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-xs font-bold text-primary opacity-60 cursor-not-allowed"
-                      >
-                        <ChatBubbleLeftRightIcon className="size-4" aria-hidden="true" />
-                        Coming soon
-                      </button>
-                    ) : (
+                  ) : (
+                    <div className="mb-4 rounded-2xl border border-dashed border-base-300 p-4 text-center">
+                      <p className="text-xs font-semibold text-neutral/50 mb-2">Connect your wallet to leave a review</p>
                       <RainbowKitCustomConnectButton />
-                    )}
-                  </div>
+                    </div>
+                  )}
+
+                  {/* Reviews list */}
+                  {reviewsLoading ? (
+                    <div className="space-y-3">
+                      {[1,2].map(i => (
+                        <div key={i} className="animate-pulse rounded-xl bg-base-200 h-20" />
+                      ))}
+                    </div>
+                  ) : reviews.length > 0 ? (
+                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                      {reviews.map(review => (
+                        <article key={review.id} className="rounded-xl bg-base-200 p-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary text-[10px] font-black shrink-0">
+                              {review.wallet_address.slice(2, 4).toUpperCase()}
+                            </span>
+                            <h3 className="truncate text-sm font-black text-neutral">
+                              {review.wallet_address.slice(0, 6)}…{review.wallet_address.slice(-4)}
+                            </h3>
+                            <span className="ml-auto shrink-0 text-[10px] font-semibold text-neutral/40">
+                              {new Date(review.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="m-0 text-xs font-semibold leading-5 text-neutral/65">{review.content}</p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+                      <ChatBubbleLeftRightIcon className="size-9 text-neutral/20" aria-hidden="true" />
+                      <p className="text-sm font-bold text-neutral/40">No community reviews yet</p>
+                      <p className="text-xs font-semibold text-neutral/30">Be the first to share your thoughts.</p>
+                    </div>
+                  )}
                 </div>
 
               </div>

@@ -7,8 +7,27 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   10143: {
     WatchHubRating: {
-      address: "0xf4EC4D3f933645953eB62B8800ca3606573B0A31",
+      address: "0xAef57A3Af62E12a11dc104825779Df993c0CA2b5",
       abi: [
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+          ],
+          name: "AddedToCollection",
+          type: "event",
+        },
         {
           anonymous: false,
           inputs: [
@@ -41,6 +60,63 @@ const deployedContracts = {
           type: "event",
         },
         {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+          ],
+          name: "RemovedFromCollection",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "bool",
+              name: "watched",
+              type: "bool",
+            },
+          ],
+          name: "WatchedStatusUpdated",
+          type: "event",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+          ],
+          name: "addToCollection",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
           inputs: [
             {
               internalType: "uint256",
@@ -52,7 +128,7 @@ const deployedContracts = {
           outputs: [
             {
               internalType: "uint256",
-              name: "averageScaled",
+              name: "",
               type: "uint256",
             },
           ],
@@ -117,6 +193,25 @@ const deployedContracts = {
         {
           inputs: [
             {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "getUserCollection",
+          outputs: [
+            {
+              internalType: "uint256[]",
+              name: "",
+              type: "uint256[]",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
               internalType: "uint256",
               name: "movieId",
               type: "uint256",
@@ -165,6 +260,72 @@ const deployedContracts = {
         {
           inputs: [
             {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+          ],
+          name: "isInCollection",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+          ],
+          name: "isWatched",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+            {
+              internalType: "bool",
+              name: "watched",
+              type: "bool",
+            },
+          ],
+          name: "markAsWatched",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
               internalType: "uint256",
               name: "movieId",
               type: "uint256",
@@ -176,6 +337,19 @@ const deployedContracts = {
             },
           ],
           name: "rateMovie",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+          ],
+          name: "removeFromCollection",
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",
