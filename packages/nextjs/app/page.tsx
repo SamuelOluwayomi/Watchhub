@@ -143,7 +143,7 @@ const ThemeToggle = () => {
     <button
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="grid size-11 shrink-0 place-items-center rounded-full border border-base-300 bg-base-100 text-neutral transition hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      className="grid size-11 shrink-0 place-items-center rounded-full border border-base-300 bg-base-100 text-neutral transition hover:bg-base-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
       {isDark ? <SunIcon className="size-5" aria-hidden="true" /> : <MoonIcon className="size-5" aria-hidden="true" />}
     </button>
@@ -228,7 +228,7 @@ const CardRatingButton = ({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen(prev => !prev)}
-        className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-md transition hover:bg-primary/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-md transition hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
       >
         <StarIcon className="size-3.5" aria-hidden="true" />
         {selected > 0 ? `${selected}★` : "Rate"}
@@ -341,7 +341,7 @@ const Home: NextPage = () => {
           <p className="mt-3 text-sm font-semibold leading-6 text-neutral/65">{error}</p>
           <button
             onClick={loadWatchHub}
-            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-bold text-primary-content transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-bold text-primary-content transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             Retry
           </button>
@@ -386,7 +386,7 @@ const Home: NextPage = () => {
             {/* Logo */}
             <Link
               href="/"
-              className="mb-8 flex min-h-10 items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+              className="mb-8 flex min-h-10 items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
               <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary text-primary-content">
                 <PlayIcon className="size-5" aria-hidden="true" />
@@ -404,7 +404,7 @@ const Home: NextPage = () => {
                   <Link
                     key={link.label}
                     href={link.href}
-                    className={`flex min-h-11 items-center gap-3 rounded-full px-4 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                    className={`flex min-h-11 items-center gap-3 rounded-full px-4 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                       link.active
                         ? "bg-primary text-primary-content shadow-sm"
                         : "text-neutral/75 hover:bg-base-200"
@@ -417,7 +417,7 @@ const Home: NextPage = () => {
                   <a
                     key={link.label}
                     href={link.href}
-                    className="flex min-h-11 items-center gap-3 rounded-full px-4 text-neutral/75 transition hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="flex min-h-11 items-center gap-3 rounded-full px-4 text-neutral/75 transition hover:bg-base-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   >
                     {link.icon}
                     {link.label}
@@ -432,7 +432,7 @@ const Home: NextPage = () => {
                 <h2 className="text-sm font-bold text-neutral">Popular series</h2>
                 <a
                   href="#top-rated"
-                  className="rounded-full px-3 py-1 text-xs font-semibold text-primary hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                  className="rounded-full px-3 py-1 text-xs font-semibold text-primary hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
                 >
                   See all
                 </a>
@@ -441,7 +441,7 @@ const Home: NextPage = () => {
                 {data.continueWatching.map(item => (
                   <button
                     key={`${item.mediaType}-${item.tmdbId}`}
-                    className="grid min-h-12 w-full grid-cols-[48px_minmax(0,1fr)_32px] items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded-xl p-1 hover:bg-base-200 transition"
+                    className="grid min-h-12 w-full grid-cols-[48px_minmax(0,1fr)_32px] items-center gap-3 text-left focus-visible:outline-2 focus-visible:outline-primary rounded-xl p-1 hover:bg-base-200 transition"
                   >
                     <MediaImage src={item.posterUrl} alt="" className="h-12 w-12 rounded-xl object-cover" />
                     <span className="min-w-0">
@@ -506,7 +506,7 @@ const Home: NextPage = () => {
             {/* Notifications */}
             <button
               aria-label="Notifications"
-              className="grid size-11 shrink-0 place-items-center rounded-full border border-base-300 bg-base-100 text-neutral transition hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="grid size-11 shrink-0 place-items-center rounded-full border border-base-300 bg-base-100 text-neutral transition hover:bg-base-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               <BellIcon className="size-5" aria-hidden="true" />
             </button>
@@ -529,7 +529,7 @@ const Home: NextPage = () => {
               <button
                 key={category}
                 onClick={() => setActiveCategory(index)}
-                className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                   activeCategory === index
                     ? "bg-primary text-primary-content shadow-sm"
                     : "bg-base-200 text-neutral/70 hover:bg-base-300"
@@ -582,7 +582,7 @@ const Home: NextPage = () => {
                   <button
                     onClick={() => addToCollection(featured.contractId)}
                     disabled={isMining}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/14 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/14 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <BookmarkIcon className="size-5" aria-hidden="true" />
                     Collection
@@ -590,7 +590,7 @@ const Home: NextPage = () => {
                   <button
                     onClick={() => markWatched(featured.contractId)}
                     disabled={isMining}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/14 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/14 px-5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <CheckCircleIcon className="size-5" aria-hidden="true" />
                     Watched
@@ -696,7 +696,7 @@ const Home: NextPage = () => {
             <section id="top-rated">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-xl font-black text-neutral">You Might Like</h2>
-                <button className="min-h-10 rounded-full px-3 text-sm font-bold text-neutral/55 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition">
+                <button className="min-h-10 rounded-full px-3 text-sm font-bold text-neutral/55 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition">
                   See all
                 </button>
               </div>
@@ -839,7 +839,7 @@ const Home: NextPage = () => {
                   </p>
                 </div>
               </div>
-              <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-neutral px-6 text-sm font-bold text-neutral-content transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-neutral px-6 text-sm font-bold text-neutral-content transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                 <TvIcon className="size-5" aria-hidden="true" />
                 Recommend
               </button>
@@ -857,35 +857,35 @@ const Home: NextPage = () => {
       >
         <Link
           href="/"
-          className="flex flex-col items-center gap-1 py-3 px-3 text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="flex flex-col items-center gap-1 py-3 px-3 text-primary focus-visible:outline-2 focus-visible:outline-primary"
         >
           <HomeIcon className="size-6" aria-hidden="true" />
           <span className="text-[10px] font-bold">Explore</span>
         </Link>
         <a
           href="#top-rated"
-          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline-2 focus-visible:outline-primary"
         >
           <StarIcon className="size-6" aria-hidden="true" />
           <span className="text-[10px] font-bold">Top rated</span>
         </a>
         <a
           href="#collection"
-          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline-2 focus-visible:outline-primary"
         >
           <BookmarkIcon className="size-6" aria-hidden="true" />
           <span className="text-[10px] font-bold">Collection</span>
         </a>
         <a
           href="#watched"
-          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline-2 focus-visible:outline-primary"
         >
           <CheckCircleIcon className="size-6" aria-hidden="true" />
           <span className="text-[10px] font-bold">Watched</span>
         </a>
         <Link
           href="/debug"
-          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="flex flex-col items-center gap-1 py-3 px-3 text-neutral/60 hover:text-primary transition focus-visible:outline-2 focus-visible:outline-primary"
         >
           <BugAntIcon className="size-6" aria-hidden="true" />
           <span className="text-[10px] font-bold">Debug</span>
@@ -896,3 +896,4 @@ const Home: NextPage = () => {
 };
 
 export default Home;
+
