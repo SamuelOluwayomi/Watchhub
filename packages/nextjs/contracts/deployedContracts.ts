@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   10143: {
     WatchHubRating: {
-      address: "0xAef57A3Af62E12a11dc104825779Df993c0CA2b5",
+      address: "0x928105afaba47b6C45a44a155Bbb791C93BeE2FB",
       abi: [
         {
           anonymous: false,
@@ -112,6 +112,24 @@ const deployedContracts = {
             },
           ],
           name: "addToCollection",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "addToCollectionSponsored",
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",
@@ -331,6 +349,29 @@ const deployedContracts = {
               type: "uint256",
             },
             {
+              internalType: "bool",
+              name: "watched",
+              type: "bool",
+            },
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "markAsWatchedSponsored",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+            {
               internalType: "uint8",
               name: "score",
               type: "uint8",
@@ -348,8 +389,49 @@ const deployedContracts = {
               name: "movieId",
               type: "uint256",
             },
+            {
+              internalType: "uint8",
+              name: "score",
+              type: "uint8",
+            },
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "rateMovieSponsored",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
           ],
           name: "removeFromCollection",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "movieId",
+              type: "uint256",
+            },
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "removeFromCollectionSponsored",
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",

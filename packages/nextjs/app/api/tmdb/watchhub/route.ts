@@ -133,8 +133,7 @@ const normalizeItem = (
   const genreNames =
     item.genre_ids
       ?.map(id => genresByType[mediaType].get(id))
-      .filter((name): name is string => Boolean(name))
-      .slice(0, 2) || [];
+      .filter((name): name is string => Boolean(name)) || [];
 
   return {
     tmdbId: item.id,

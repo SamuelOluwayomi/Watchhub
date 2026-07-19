@@ -26,7 +26,7 @@ import {
   UserCircleIcon,
 } from "@heroicons/react/24/outline";
 import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
-import { useScaffoldEventHistory, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldEventHistory, useScaffoldReadContract, useSponsorWrite } from "~~/hooks/scaffold-eth";
 
 const MONAD_TESTNET_ID = 10143;
 
@@ -431,10 +431,7 @@ const Home: NextPage = () => {
     [selectedFeatured?.contractId, data?.featured.contractId],
   );
 
-  const { writeContractAsync, isMining } = useScaffoldWriteContract({
-    contractName: "WatchHubRating",
-    chainId: MONAD_TESTNET_ID,
-  });
+  const { sponsorWrite: sponsorWriteAsync, isLoading: isMining } = useSponsorWrite();
 
   const { data: movieStats } = useScaffoldReadContract({
     contractName: "WatchHubRating",
@@ -542,15 +539,18 @@ const Home: NextPage = () => {
   }, [selectedFeatured?.contractId, data?.featured?.contractId, fetchReviews]);
 
   const writeRating = async (contractId: string, score: number) => {
-    await writeContractAsync({ functionName: "rateMovie", args: [BigInt(contractId), score] });
+    await sponsorWriteAsync({
+      functionName: "rateMovieSponsored",
+      args: [BigInt(contractId), score],
+    });
   };
   const addToCollection = async (contractId: string) => {
     try {
       if (inCollection) {
-        await writeContractAsync({ functionName: "removeFromCollection", args: [BigInt(contractId)] });
+        await sponsorWriteAsync({ functionName: "removeFromCollectionSponsored", args: [BigInt(contractId)] });
         setInCollection(false);
       } else {
-        await writeContractAsync({ functionName: "addToCollection", args: [BigInt(contractId)] });
+        await sponsorWriteAsync({ functionName: "addToCollectionSponsored", args: [BigInt(contractId)] });
         setInCollection(true);
       }
       refetchCollection();
@@ -560,7 +560,10 @@ const Home: NextPage = () => {
   };
   const markWatched = async (contractId: string) => {
     try {
-      await writeContractAsync({ functionName: "markAsWatched", args: [BigInt(contractId), !isWatchedLocal] });
+      await sponsorWriteAsync({
+        functionName: "markAsWatchedSponsored",
+        args: [BigInt(contractId), !isWatchedLocal],
+      });
       setIsWatchedLocal(prev => !prev);
     } catch {
       // scaffold-eth shows toast on error

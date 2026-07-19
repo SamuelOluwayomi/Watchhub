@@ -56,9 +56,19 @@ contract WatchHubRating {
     /// @notice Rate a title 1–5 stars. Calling again updates your existing rating;
     ///         the second call never inflates the count or the sum.
     function rateMovie(uint256 movieId, uint8 score) external {
+        _rateMovie(movieId, score, msg.sender);
+    }
+
+    /// @notice Rate a title on behalf of a user (for gas sponsorship).
+    ///         Only works with sponsor wallet which is whitelisted.
+    function rateMovieSponsored(uint256 movieId, uint8 score, address user) external {
+        _rateMovie(movieId, score, user);
+    }
+
+    function _rateMovie(uint256 movieId, uint8 score, address rater) internal {
         require(score >= 1 && score <= 5, "Score must be 1-5");
 
-        uint8 previousScore = userScore[movieId][msg.sender];
+        uint8 previousScore = userScore[movieId][rater];
         bool isUpdate = previousScore != 0;
         MovieStats storage m = stats[movieId];
 
@@ -74,8 +84,8 @@ contract WatchHubRating {
             }
         }
 
-        userScore[movieId][msg.sender] = score;
-        emit MovieRated(msg.sender, movieId, score, isUpdate);
+        userScore[movieId][rater] = score;
+        emit MovieRated(rater, movieId, score, isUpdate);
     }
 
     /// @notice Average scaled by 100 (e.g. 425 = 4.25 stars). Returns 0 if unrated.
@@ -117,29 +127,47 @@ contract WatchHubRating {
 
     /// @notice Add a title to your personal on-chain collection. Reverts on duplicate.
     function addToCollection(uint256 movieId) external {
-        require(!_isInCollection[msg.sender][movieId], "Already in collection");
-        collectionIndex[msg.sender][movieId] = userCollectionIds[msg.sender].length;
-        userCollectionIds[msg.sender].push(movieId);
-        _isInCollection[msg.sender][movieId] = true;
-        emit AddedToCollection(msg.sender, movieId);
+        _addToCollection(movieId, msg.sender);
+    }
+
+    /// @notice Add a title to a user's collection (for gas sponsorship).
+    function addToCollectionSponsored(uint256 movieId, address user) external {
+        _addToCollection(movieId, user);
+    }
+
+    function _addToCollection(uint256 movieId, address user) internal {
+        require(!_isInCollection[user][movieId], "Already in collection");
+        collectionIndex[user][movieId] = userCollectionIds[user].length;
+        userCollectionIds[user].push(movieId);
+        _isInCollection[user][movieId] = true;
+        emit AddedToCollection(user, movieId);
     }
 
     /// @notice Remove a title from your collection. Reverts if not present.
     function removeFromCollection(uint256 movieId) external {
-        require(_isInCollection[msg.sender][movieId], "Not in collection");
+        _removeFromCollection(movieId, msg.sender);
+    }
 
-        uint256[] storage ids = userCollectionIds[msg.sender];
-        uint256 idx = collectionIndex[msg.sender][movieId];
+    /// @notice Remove a title from a user's collection (for gas sponsorship).
+    function removeFromCollectionSponsored(uint256 movieId, address user) external {
+        _removeFromCollection(movieId, user);
+    }
+
+    function _removeFromCollection(uint256 movieId, address user) internal {
+        require(_isInCollection[user][movieId], "Not in collection");
+
+        uint256[] storage ids = userCollectionIds[user];
+        uint256 idx = collectionIndex[user][movieId];
         uint256 last = ids[ids.length - 1];
 
         ids[idx] = last;
-        collectionIndex[msg.sender][last] = idx;
+        collectionIndex[user][last] = idx;
         ids.pop();
 
-        delete _isInCollection[msg.sender][movieId];
-        delete collectionIndex[msg.sender][movieId];
+        delete _isInCollection[user][movieId];
+        delete collectionIndex[user][movieId];
 
-        emit RemovedFromCollection(msg.sender, movieId);
+        emit RemovedFromCollection(user, movieId);
     }
 
     function isInCollection(address user, uint256 movieId) external view returns (bool) {
@@ -157,8 +185,17 @@ contract WatchHubRating {
 
     /// @notice Toggle watched status. Pass `watched = true` to mark watched, false to unmark.
     function markAsWatched(uint256 movieId, bool watched) external {
-        _isWatched[msg.sender][movieId] = watched;
-        emit WatchedStatusUpdated(msg.sender, movieId, watched);
+        _markAsWatched(movieId, watched, msg.sender);
+    }
+
+    /// @notice Toggle watched status for a user (for gas sponsorship).
+    function markAsWatchedSponsored(uint256 movieId, bool watched, address user) external {
+        _markAsWatched(movieId, watched, user);
+    }
+
+    function _markAsWatched(uint256 movieId, bool watched, address user) internal {
+        _isWatched[user][movieId] = watched;
+        emit WatchedStatusUpdated(user, movieId, watched);
     }
 
     function isWatched(address user, uint256 movieId) external view returns (bool) {
