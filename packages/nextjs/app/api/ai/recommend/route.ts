@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       for (const [genre, keywords] of Object.entries(genreKeywords)) {
         const hasGenre = genresLower.includes(genre);
         const matchesPrompt = keywords.some(kw => normalizedPrompt.includes(kw));
-        
+
         if (hasGenre && matchesPrompt) {
           score += 10; // High match for genre
         } else if (matchesPrompt) {
@@ -94,9 +94,8 @@ export async function POST(req: NextRequest) {
     const topMatches = sorted.slice(0, 3).map(x => x.item);
 
     // If no matches, fall back to top rated
-    const recommendations = topMatches.length > 0 
-      ? topMatches 
-      : items.sort((a, b) => b.tmdbRating - a.tmdbRating).slice(0, 3);
+    const recommendations =
+      topMatches.length > 0 ? topMatches : items.sort((a, b) => b.tmdbRating - a.tmdbRating).slice(0, 3);
 
     // Generate personalized AI reasoning
     let reasoning = "";

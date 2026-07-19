@@ -121,8 +121,8 @@ export async function GET(req: NextRequest) {
     const runtimeVal = details.runtime
       ? `${details.runtime}m`
       : details.number_of_seasons
-      ? `${details.number_of_seasons} Season${details.number_of_seasons > 1 ? "s" : ""}`
-      : null;
+        ? `${details.number_of_seasons} Season${details.number_of_seasons > 1 ? "s" : ""}`
+        : null;
 
     const featured = {
       tmdbId: details.id,

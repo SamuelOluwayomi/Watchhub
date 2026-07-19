@@ -26,7 +26,7 @@ import {
   UserCircleIcon,
 } from "@heroicons/react/24/outline";
 import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
-import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldEventHistory, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
 const MONAD_TESTNET_ID = 10143;
 
@@ -160,13 +160,7 @@ const ThemeToggle = () => {
 };
 
 /* ─────────────── Star Rating Picker (inline hero) ─────────────── */
-const StarRatingPicker = ({
-  onRate,
-  disabled,
-}: {
-  onRate: (score: number) => void;
-  disabled: boolean;
-}) => {
+const StarRatingPicker = ({ onRate, disabled }: { onRate: (score: number) => void; disabled: boolean }) => {
   const [hovered, setHovered] = useState(0);
   const [selected, setSelected] = useState(0);
 
@@ -191,17 +185,13 @@ const StarRatingPicker = ({
           >
             <StarIcon
               className={`size-7 transition-colors ${
-                star <= (hovered || selected)
-                  ? "fill-yellow-400 text-yellow-400"
-                  : "fill-white/20 text-white/40"
+                star <= (hovered || selected) ? "fill-yellow-400 text-yellow-400" : "fill-white/20 text-white/40"
               }`}
               aria-hidden="true"
             />
           </button>
         ))}
-        {selected > 0 && (
-          <span className="ml-2 text-sm font-black text-yellow-400">{selected}/5</span>
-        )}
+        {selected > 0 && <span className="ml-2 text-sm font-black text-yellow-400">{selected}/5</span>}
       </div>
     </div>
   );
@@ -236,7 +226,7 @@ const CardRatingButton = ({
         aria-label={`Rate ${title}`}
         aria-expanded={open}
         disabled={disabled}
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation();
           setOpen(prev => !prev);
         }}
@@ -253,7 +243,7 @@ const CardRatingButton = ({
           <div
             className="fixed inset-0 z-30"
             aria-hidden="true"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
               setOpen(false);
             }}
@@ -263,7 +253,9 @@ const CardRatingButton = ({
             aria-label={`Rate ${title}`}
             className="absolute bottom-full right-0 z-40 mb-2 flex flex-col gap-2 rounded-2xl bg-neutral/95 px-4 py-3 shadow-xl backdrop-blur"
           >
-            <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider text-white/60">Pick a rating</p>
+            <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider text-white/60">
+              Pick a rating
+            </p>
             <div className="flex items-center gap-0.5">
               {[1, 2, 3, 4, 5].map(star => (
                 <button
@@ -272,7 +264,7 @@ const CardRatingButton = ({
                   disabled={disabled}
                   onMouseEnter={() => setHovered(star)}
                   onMouseLeave={() => setHovered(0)}
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation();
                     handleSelect(star);
                   }}
@@ -280,9 +272,7 @@ const CardRatingButton = ({
                 >
                   <StarIcon
                     className={`size-6 transition-colors ${
-                      star <= (hovered || selected)
-                        ? "fill-yellow-400 text-yellow-400"
-                        : "fill-white/20 text-white/50"
+                      star <= (hovered || selected) ? "fill-yellow-400 text-yellow-400" : "fill-white/20 text-white/50"
                     }`}
                     aria-hidden="true"
                   />
@@ -328,6 +318,84 @@ const Home: NextPage = () => {
   const [aiRecommendations, setAiRecommendations] = useState<WatchHubItem[]>([]);
   const [aiReasoning, setAiReasoning] = useState("");
 
+  // Cache of seen titles to display them in My Collection / Watched sections
+  const [cachedItems, setCachedItems] = useState<Record<string, WatchHubItem>>({});
+
+  useEffect(() => {
+    if (data) {
+      const itemsMap: Record<string, WatchHubItem> = {};
+      [...data.recommendations, ...data.continueWatching, data.featured].forEach(item => {
+        itemsMap[item.contractId] = item;
+      });
+      setCachedItems(prev => ({ ...itemsMap, ...prev }));
+    }
+  }, [data]);
+
+  useEffect(() => {
+    if (selectedFeatured) {
+      const item: WatchHubItem = {
+        tmdbId: selectedFeatured.tmdbId,
+        contractId: selectedFeatured.contractId,
+        mediaType: selectedFeatured.mediaType,
+        typeLabel: selectedFeatured.typeLabel,
+        title: selectedFeatured.title,
+        overview: selectedFeatured.overview,
+        year: selectedFeatured.year,
+        genres: selectedFeatured.genres,
+        posterUrl: selectedFeatured.posterUrl,
+        backdropUrl: selectedFeatured.backdropUrl,
+        tmdbRating: selectedFeatured.tmdbRating,
+        tmdbVoteCount: selectedFeatured.tmdbVoteCount,
+      };
+      setCachedItems(prev => ({
+        ...prev,
+        [selectedFeatured.contractId]: item,
+      }));
+    }
+  }, [selectedFeatured]);
+
+  // Read user collection from the blockchain
+  const { data: userCollectionIds, refetch: refetchCollection } = useScaffoldReadContract({
+    contractName: "WatchHubRating",
+    functionName: "getUserCollection",
+    args: [connectedAddress],
+    chainId: MONAD_TESTNET_ID,
+    query: { enabled: Boolean(connectedAddress) },
+  });
+
+  const collectionList = useMemo(() => {
+    if (!userCollectionIds || !connectedAddress) return [];
+    return userCollectionIds
+      .map(id => cachedItems[id.toString()])
+      .filter((item): item is WatchHubItem => Boolean(item));
+  }, [userCollectionIds, connectedAddress, cachedItems]);
+
+  // Read user watched events from blockchain history
+  const { data: watchedEvents } = useScaffoldEventHistory({
+    contractName: "WatchHubRating",
+    eventName: "WatchedStatusUpdated",
+    fromBlock: 0n,
+    filters: { user: connectedAddress },
+    chainId: MONAD_TESTNET_ID,
+    watch: true,
+    enabled: Boolean(connectedAddress),
+  });
+
+  const watchedList = useMemo(() => {
+    if (!watchedEvents || !connectedAddress) return [];
+    const statusMap: Record<string, boolean> = {};
+    watchedEvents.forEach(evt => {
+      const movieIdStr = evt.args.movieId?.toString();
+      if (movieIdStr && evt.args.watched !== undefined) {
+        statusMap[movieIdStr] = evt.args.watched;
+      }
+    });
+    return Object.keys(statusMap)
+      .filter(id => statusMap[id])
+      .map(id => cachedItems[id])
+      .filter((item): item is WatchHubItem => Boolean(item));
+  }, [watchedEvents, connectedAddress, cachedItems]);
+
   const getAiRecommendations = async () => {
     if (!aiPrompt.trim() || !data) return;
     setAiLoading(true);
@@ -358,7 +426,10 @@ const Home: NextPage = () => {
     }
   };
 
-  const featuredContractId = useMemo(() => BigInt(selectedFeatured?.contractId || data?.featured.contractId || "0"), [selectedFeatured?.contractId, data?.featured.contractId]);
+  const featuredContractId = useMemo(
+    () => BigInt(selectedFeatured?.contractId || data?.featured.contractId || "0"),
+    [selectedFeatured?.contractId, data?.featured.contractId],
+  );
 
   const { writeContractAsync, isMining } = useScaffoldWriteContract({
     contractName: "WatchHubRating",
@@ -412,7 +483,9 @@ const Home: NextPage = () => {
     }
   };
 
-  useEffect(() => { loadWatchHub(); }, []);
+  useEffect(() => {
+    loadWatchHub();
+  }, []);
 
   useEffect(() => {
     if (data?.featured) {
@@ -480,6 +553,7 @@ const Home: NextPage = () => {
         await writeContractAsync({ functionName: "addToCollection", args: [BigInt(contractId)] });
         setInCollection(true);
       }
+      refetchCollection();
     } catch {
       // scaffold-eth shows toast on error
     }
@@ -549,7 +623,9 @@ const Home: NextPage = () => {
         <section className="w-full max-w-lg rounded-3xl bg-base-100 p-8 text-center shadow-center">
           <FilmIcon className="mx-auto size-12 text-primary" aria-hidden="true" />
           <h1 className="mt-4 text-2xl font-black text-neutral">No titles yet</h1>
-          <p className="mt-2 text-sm font-semibold text-neutral/65">TMDB responded, but there were no movies or series to show.</p>
+          <p className="mt-2 text-sm font-semibold text-neutral/65">
+            TMDB responded, but there were no movies or series to show.
+          </p>
         </section>
       </main>
     );
@@ -558,13 +634,45 @@ const Home: NextPage = () => {
   const featured = selectedFeatured || data.featured;
   const watchHubScore = movieStats ? formatScore(movieStats[2]) : "New";
   const ratingCount = movieStats ? Number(movieStats[1]) : 0;
-  const featureMeta = [featured.year, featured.runtime, featured.genres[0], `TMDB ${featured.tmdbRating || "N/A"}`].filter(Boolean);
+  const featureMeta = [
+    featured.year,
+    featured.runtime,
+    featured.genres[0],
+    `TMDB ${featured.tmdbRating || "N/A"}`,
+  ].filter(Boolean);
+
+  // ── Category filtering ──────────────────────────────────────────────────
+  // categories[0] = "Movies", [1] = "TV Series", [2+] = genre names
+  const allPool = [...data.recommendations, ...data.continueWatching];
+  const deduped = allPool.filter(
+    (item, idx, arr) => arr.findIndex(x => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType) === idx,
+  );
+
+  const filteredRecommendations = (() => {
+    if (activeCategory === 0) return deduped.filter(i => i.mediaType === "movie");
+    if (activeCategory === 1) return deduped.filter(i => i.mediaType === "tv");
+    const genre = data.categories[activeCategory]; // e.g. "Action"
+    if (!genre) return deduped;
+    return deduped.filter(i => i.genres.some(g => g.toLowerCase() === genre.toLowerCase()));
+  })();
+
+  const sectionLabel = data.categories[activeCategory] ?? "You Might Like";
 
   const navLinks = [
     { href: "/", label: "Explore", icon: <HomeIcon className="size-5" aria-hidden="true" />, active: true },
     { href: "#top-rated", label: "Top rated", icon: <StarIcon className="size-5" aria-hidden="true" />, active: false },
-    { href: "#collection", label: "My Collection", icon: <BookmarkIcon className="size-5" aria-hidden="true" />, active: false },
-    { href: "#watched", label: "Watched", icon: <CheckCircleIcon className="size-5" aria-hidden="true" />, active: false },
+    {
+      href: "#collection",
+      label: "My Collection",
+      icon: <BookmarkIcon className="size-5" aria-hidden="true" />,
+      active: false,
+    },
+    {
+      href: "#watched",
+      label: "Watched",
+      icon: <CheckCircleIcon className="size-5" aria-hidden="true" />,
+      active: false,
+    },
     { href: "/debug", label: "Debug", icon: <BugAntIcon className="size-5" aria-hidden="true" />, active: false },
   ];
 
@@ -572,7 +680,6 @@ const Home: NextPage = () => {
     <>
       {/* ── Root layout: sidebar + scrollable content ── */}
       <div className="flex min-h-screen bg-base-200">
-
         {/* ════ SIDEBAR (desktop only) ════ */}
         <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-base-100 border-r border-base-300 sticky top-0 h-screen overflow-y-auto">
           <div className="flex flex-col flex-1 p-5">
@@ -598,9 +705,7 @@ const Home: NextPage = () => {
                     key={link.label}
                     href={link.href}
                     className={`flex min-h-11 items-center gap-3 rounded-full px-4 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
-                      link.active
-                        ? "bg-primary text-primary-content shadow-sm"
-                        : "text-neutral/75 hover:bg-base-200"
+                      link.active ? "bg-primary text-primary-content shadow-sm" : "text-neutral/75 hover:bg-base-200"
                     }`}
                   >
                     {link.icon}
@@ -615,7 +720,7 @@ const Home: NextPage = () => {
                     {link.icon}
                     {link.label}
                   </a>
-                )
+                ),
               )}
             </nav>
 
@@ -736,10 +841,9 @@ const Home: NextPage = () => {
 
           {/* Scrollable page body */}
           <main id="main-content-scroll" className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pb-24 lg:pb-6">
-
             {/* ── Hero / Featured ── */}
             <section className="relative isolate overflow-hidden rounded-3xl bg-neutral text-white min-h-[340px] sm:min-h-[420px]">
-            {/* Mining or Loading indicator overlay */}
+              {/* Mining or Loading indicator overlay */}
               {(isMining || detailsLoading) && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 rounded-3xl">
                   <div className="flex flex-col items-center gap-3">
@@ -762,17 +866,18 @@ const Home: NextPage = () => {
                   Trending from TMDB
                 </div>
                 <div className="max-w-2xl">
-                  <h1 className="text-3xl font-black leading-none text-white sm:text-5xl lg:text-6xl">{featured.title}</h1>
-                  <p className="mt-3 text-sm font-semibold text-white/80">{featureMeta.join(" • ")} • WatchHub {watchHubScore}</p>
+                  <h1 className="text-3xl font-black leading-none text-white sm:text-5xl lg:text-6xl">
+                    {featured.title}
+                  </h1>
+                  <p className="mt-3 text-sm font-semibold text-white/80">
+                    {featureMeta.join(" • ")} • WatchHub {watchHubScore}
+                  </p>
                   <p className="mt-4 max-w-xl text-sm leading-6 text-white/75 sm:text-base line-clamp-3 sm:line-clamp-none">
                     {featured.overview}
                   </p>
                 </div>
                 {/* Inline star rating picker */}
-                <StarRatingPicker
-                  onRate={(score) => writeRating(featured.contractId, score)}
-                  disabled={isMining}
-                />
+                <StarRatingPicker onRate={score => writeRating(featured.contractId, score)} disabled={isMining} />
 
                 <div className="mt-4 flex flex-wrap gap-3">
                   <button
@@ -805,7 +910,6 @@ const Home: NextPage = () => {
             <section id="ratings">
               <h2 className="mb-3 text-xl font-black text-neutral">Ratings</h2>
               <div className="grid gap-4 sm:grid-cols-2">
-
                 {/* ── TMDB Rating ── */}
                 <div className="rounded-2xl border border-base-300 bg-base-100 p-5">
                   <div className="flex items-center justify-between mb-4">
@@ -822,7 +926,7 @@ const Home: NextPage = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 mb-3">
-                    {[1,2,3,4,5].map(s => (
+                    {[1, 2, 3, 4, 5].map(s => (
                       <StarIcon
                         key={s}
                         className={`size-5 ${
@@ -833,7 +937,9 @@ const Home: NextPage = () => {
                         aria-hidden="true"
                       />
                     ))}
-                    <span className="ml-2 text-xs font-bold text-neutral/55">{featured.tmdbVoteCount?.toLocaleString() || 0} votes</span>
+                    <span className="ml-2 text-xs font-bold text-neutral/55">
+                      {featured.tmdbVoteCount?.toLocaleString() || 0} votes
+                    </span>
                   </div>
                   <p className="text-xs font-semibold text-neutral/45 leading-relaxed">
                     Aggregated from TMDB users. Not tamper-resistant — subject to review bombing.
@@ -865,7 +971,7 @@ const Home: NextPage = () => {
                   {ratingCount > 0 ? (
                     <>
                       <div className="flex items-center gap-1 mb-3">
-                        {[1,2,3,4,5].map(s => (
+                        {[1, 2, 3, 4, 5].map(s => (
                           <StarIcon
                             key={s}
                             className={`size-5 ${
@@ -876,7 +982,9 @@ const Home: NextPage = () => {
                             aria-hidden="true"
                           />
                         ))}
-                        <span className="ml-2 text-xs font-bold text-neutral/55">{ratingCount} onchain vote{ratingCount !== 1 ? "s" : ""}</span>
+                        <span className="ml-2 text-xs font-bold text-neutral/55">
+                          {ratingCount} onchain vote{ratingCount !== 1 ? "s" : ""}
+                        </span>
                       </div>
                       <p className="text-xs font-semibold text-neutral/45 leading-relaxed">
                         Tamper-resistant: each wallet can only submit one rating per title.
@@ -890,50 +998,57 @@ const Home: NextPage = () => {
                     </div>
                   )}
                 </div>
-
               </div>
             </section>
 
-            {/* ── You Might Like ── */}
+            {/* ── You Might Like / Category Grid ── */}
             <section id="top-rated">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-black text-neutral">You Might Like</h2>
-                <button className="min-h-10 rounded-full px-3 text-sm font-bold text-neutral/55 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition">
-                  See all
-                </button>
+                <h2 className="text-xl font-black text-neutral">{sectionLabel}</h2>
+                <span className="text-xs font-semibold text-neutral/40">
+                  {filteredRecommendations.length} title{filteredRecommendations.length !== 1 ? "s" : ""}
+                </span>
               </div>
-              <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-                {data.recommendations.slice(0, 8).map(item => (
-                  <article
-                    key={`${item.mediaType}-${item.tmdbId}`}
-                    onClick={() => selectTitle(item.tmdbId, item.mediaType)}
-                    className="group overflow-hidden rounded-2xl bg-neutral text-white will-change-transform cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
-                  >
-                    <div className="relative aspect-[1.42] overflow-hidden">
-                      <MediaImage
-                        src={item.backdropUrl || item.posterUrl}
-                        alt={`${item.title} poster`}
-                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105 will-change-transform"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                      <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-2 p-3">
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-black leading-tight">{item.title}</h3>
-                          <p className="m-0 text-xs font-semibold text-white/70 truncate">
-                            {item.year} • TMDB {item.tmdbRating || "N/A"}
-                          </p>
-                        </div>
-                        <CardRatingButton
-                          title={item.title}
-                          contractId={item.contractId}
-                          onRate={writeRating}
-                          disabled={isMining}
+              {filteredRecommendations.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center rounded-2xl bg-base-100 border border-base-300">
+                  <FilmIcon className="size-10 text-neutral/20" />
+                  <p className="text-sm font-bold text-neutral/40">No {sectionLabel} titles in the current pool</p>
+                  <p className="text-xs font-semibold text-neutral/30">Try another category or check back later.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+                  {filteredRecommendations.slice(0, 12).map(item => (
+                    <article
+                      key={`${item.mediaType}-${item.tmdbId}`}
+                      onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                      className="group overflow-hidden rounded-2xl bg-neutral text-white will-change-transform cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
+                    >
+                      <div className="relative aspect-[1.42] overflow-hidden">
+                        <MediaImage
+                          src={item.backdropUrl || item.posterUrl}
+                          alt={`${item.title} poster`}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105 will-change-transform"
                         />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                        <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-2 p-3">
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-black leading-tight">{item.title}</h3>
+                            <p className="m-0 text-xs font-semibold text-white/70 truncate">
+                              {item.year} • {item.typeLabel} • TMDB {item.tmdbRating || "N/A"}
+                            </p>
+                          </div>
+                          <CardRatingButton
+                            title={item.title}
+                            contractId={item.contractId}
+                            onRate={writeRating}
+                            disabled={isMining}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* ── Featured Cast ── */}
@@ -954,11 +1069,108 @@ const Home: NextPage = () => {
               </div>
             </section>
 
+            {/* ── My Collection Section ── */}
+            <section id="collection">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-black text-neutral">My Collection</h2>
+                <span className="text-xs font-semibold text-neutral/40">On-chain collection</span>
+              </div>
+              {!connectedAddress ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3 text-center rounded-2xl bg-base-100 border border-base-300">
+                  <BookmarkIcon className="size-8 text-neutral/20" />
+                  <p className="text-sm font-bold text-neutral/40">Connect your wallet to view your collection</p>
+                  <RainbowKitCustomConnectButton />
+                </div>
+              ) : collectionList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-center rounded-2xl bg-base-100 border border-base-300">
+                  <BookmarkIcon className="size-8 text-neutral/20" />
+                  <p className="text-sm font-bold text-neutral/40">Your collection is empty on-chain</p>
+                  <p className="text-xs font-semibold text-neutral/30 max-w-sm">
+                    Click the &quot;Collection&quot; button on the main hero details of any title to add it to your
+                    permanent collection list.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {collectionList.map(item => (
+                    <article
+                      key={`collection-${item.mediaType}-${item.tmdbId}`}
+                      onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                      className="group overflow-hidden rounded-2xl bg-neutral text-white cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
+                    >
+                      <div className="relative aspect-[0.7] overflow-hidden">
+                        <MediaImage
+                          src={item.posterUrl || item.backdropUrl}
+                          alt={`${item.title} poster`}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                        <div className="absolute bottom-0 left-0 right-0 p-3">
+                          <h3 className="truncate text-xs font-black leading-tight">{item.title}</h3>
+                          <p className="m-0 text-[10px] font-semibold text-white/70">
+                            {item.year} • {item.typeLabel}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* ── Watched List Section ── */}
+            <section id="watched">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-black text-neutral">Watched List</h2>
+                <span className="text-xs font-semibold text-neutral/40">On-chain watched list</span>
+              </div>
+              {!connectedAddress ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3 text-center rounded-2xl bg-base-100 border border-base-300">
+                  <CheckCircleIcon className="size-8 text-neutral/20" />
+                  <p className="text-sm font-bold text-neutral/40">Connect your wallet to view your watched list</p>
+                  <RainbowKitCustomConnectButton />
+                </div>
+              ) : watchedList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-center rounded-2xl bg-base-100 border border-base-300">
+                  <CheckCircleIcon className="size-8 text-neutral/20" />
+                  <p className="text-sm font-bold text-neutral/40">Your watched list is empty on-chain</p>
+                  <p className="text-xs font-semibold text-neutral/30 max-w-sm">
+                    Mark titles as &quot;Mark Watched&quot; on the hero details to track your view history on the
+                    blockchain.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {watchedList.map(item => (
+                    <article
+                      key={`watched-${item.mediaType}-${item.tmdbId}`}
+                      onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                      className="group overflow-hidden rounded-2xl bg-neutral text-white cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
+                    >
+                      <div className="relative aspect-[0.7] overflow-hidden">
+                        <MediaImage
+                          src={item.posterUrl || item.backdropUrl}
+                          alt={`${item.title} poster`}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                        <div className="absolute bottom-0 left-0 right-0 p-3">
+                          <h3 className="truncate text-xs font-black leading-tight">{item.title}</h3>
+                          <p className="m-0 text-[10px] font-semibold text-white/70">
+                            {item.year} • {item.typeLabel}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
             {/* ══════ REVIEWS — TMDB vs Community ══════ */}
             <section id="reviews">
               <h2 className="mb-3 text-xl font-black text-neutral">Reviews</h2>
               <div className="grid gap-4 lg:grid-cols-2">
-
                 {/* ── TMDB Reviews ── */}
                 <div className="rounded-2xl bg-base-100 border border-base-300 p-5">
                   <div className="flex items-center gap-2 mb-4">
@@ -978,21 +1190,25 @@ const Home: NextPage = () => {
                             </span>
                             <h3 className="truncate text-sm font-black text-neutral">{review.author}</h3>
                           </div>
-                          <p className="m-0 text-xs font-semibold leading-5 text-neutral/65 line-clamp-4">{review.content}</p>
+                          <p className="m-0 text-xs font-semibold leading-5 text-neutral/65 line-clamp-4">
+                            {review.content}
+                          </p>
                         </article>
                       ))
                     ) : (
                       <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
                         <ChatBubbleLeftRightIcon className="size-9 text-neutral/20" aria-hidden="true" />
                         <p className="text-sm font-bold text-neutral/40">No TMDB reviews yet</p>
-                        <p className="text-xs font-semibold text-neutral/30">TMDB has no critic reviews for this title.</p>
+                        <p className="text-xs font-semibold text-neutral/30">
+                          TMDB has no critic reviews for this title.
+                        </p>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* ── Community Reviews ── */}
-                <div className="rounded-2xl bg-base-100 border border-base-300 p-5" id="watched">
+                <div className="rounded-2xl bg-base-100 border border-base-300 p-5">
                   <div className="flex items-center gap-2 mb-4">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
                       <SparklesIcon className="size-3.5" aria-hidden="true" />
@@ -1004,7 +1220,9 @@ const Home: NextPage = () => {
                   {/* Review submit form */}
                   {connectedAddress ? (
                     <div className="mb-4">
-                      <label className="sr-only" htmlFor="review-input">Write a community review</label>
+                      <label className="sr-only" htmlFor="review-input">
+                        Write a community review
+                      </label>
                       <textarea
                         id="review-input"
                         ref={reviewTextRef}
@@ -1026,16 +1244,14 @@ const Home: NextPage = () => {
                           {reviewSubmitting ? "Posting…" : "Post review"}
                         </button>
                       </div>
-                      {reviewError && (
-                        <p className="mt-2 text-xs font-bold text-error">{reviewError}</p>
-                      )}
-                      {reviewSuccess && (
-                        <p className="mt-2 text-xs font-bold text-success">Review posted! 🎉</p>
-                      )}
+                      {reviewError && <p className="mt-2 text-xs font-bold text-error">{reviewError}</p>}
+                      {reviewSuccess && <p className="mt-2 text-xs font-bold text-success">Review posted! 🎉</p>}
                     </div>
                   ) : (
                     <div className="mb-4 rounded-2xl border border-dashed border-base-300 p-4 text-center">
-                      <p className="text-xs font-semibold text-neutral/50 mb-2">Connect your wallet to leave a review</p>
+                      <p className="text-xs font-semibold text-neutral/50 mb-2">
+                        Connect your wallet to leave a review
+                      </p>
                       <RainbowKitCustomConnectButton />
                     </div>
                   )}
@@ -1043,7 +1259,7 @@ const Home: NextPage = () => {
                   {/* Reviews list */}
                   {reviewsLoading ? (
                     <div className="space-y-3">
-                      {[1,2].map(i => (
+                      {[1, 2].map(i => (
                         <div key={i} className="animate-pulse rounded-xl bg-base-200 h-20" />
                       ))}
                     </div>
@@ -1074,7 +1290,6 @@ const Home: NextPage = () => {
                     </div>
                   )}
                 </div>
-
               </div>
             </section>
 
@@ -1157,7 +1372,7 @@ const Home: NextPage = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           {/* Backdrop click to close */}
           <div className="absolute inset-0" onClick={() => setAiModalOpen(false)} />
-          
+
           <div className="relative z-10 w-full max-w-lg rounded-3xl bg-base-100 p-6 shadow-2xl border border-base-300 flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1166,7 +1381,7 @@ const Home: NextPage = () => {
                 </span>
                 <h2 className="text-lg font-black text-neutral">AI Recommendation</h2>
               </div>
-              <button 
+              <button
                 onClick={() => setAiModalOpen(false)}
                 className="grid size-8 place-items-center rounded-full bg-base-200 text-neutral hover:bg-base-300 transition font-bold"
                 aria-label="Close modal"
@@ -1176,7 +1391,8 @@ const Home: NextPage = () => {
             </div>
 
             <p className="text-xs font-semibold text-neutral/60 mb-4 leading-relaxed">
-              Describe what kind of movie or series you're in the mood for. Our AI mood engine parses title keywords, synopses, and genres.
+              Describe what kind of movie or series you&apos;re in the mood for. Our AI mood engine parses title
+              keywords, synopses, and genres.
             </p>
 
             <div className="flex gap-2">
@@ -1203,9 +1419,7 @@ const Home: NextPage = () => {
             <div className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4 pr-1">
               {aiRecommendations.length > 0 && (
                 <div className="rounded-2xl bg-base-200 p-4 border border-base-300">
-                  <p className="text-xs font-semibold text-neutral/70 italic leading-relaxed">
-                    ✨ {aiReasoning}
-                  </p>
+                  <p className="text-xs font-semibold text-neutral/70 italic leading-relaxed">✨ {aiReasoning}</p>
                 </div>
               )}
 
@@ -1254,4 +1468,3 @@ const Home: NextPage = () => {
 };
 
 export default Home;
-
