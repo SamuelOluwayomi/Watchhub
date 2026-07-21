@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 const TMDB_API_BASE_URL = "https://api.themoviedb.org/3";
 const TV_ID_OFFSET = 1_000_000_000n;
+const ANIMATION_GENRE_ID = 16;
+const DEFAULT_PAGE_COUNT = 3;
 
 type MediaType = "movie" | "tv";
 
@@ -64,6 +66,21 @@ type TmdbDetails = TmdbListItem & {
   };
 };
 
+type NormalizedItem = {
+  tmdbId: number;
+  contractId: string;
+  mediaType: MediaType;
+  typeLabel: string;
+  title: string;
+  overview: string;
+  year: string;
+  genres: string[];
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  tmdbRating: number;
+  tmdbVoteCount: number;
+};
+
 const isBearerToken = (value: string) => value.startsWith("eyJ") || value.startsWith("tmdb_");
 
 const getAuth = () => {
@@ -79,12 +96,12 @@ const getAuth = () => {
   };
 };
 
-const tmdbFetch = async <T>(path: string, params: Record<string, string> = {}) => {
+const tmdbFetch = async <T>(path: string, params: Record<string, string | number> = {}) => {
   const auth = getAuth();
   const url = new URL(`${TMDB_API_BASE_URL}${path}`);
 
   Object.entries({ language: "en-US", ...params }).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
+    url.searchParams.set(key, String(value));
   });
 
   const headers: HeadersInit = {
@@ -128,7 +145,7 @@ const normalizeItem = (
   mediaType: MediaType,
   genresByType: Record<MediaType, Map<number, string>>,
   imageBaseUrl: string,
-) => {
+): NormalizedItem => {
   const releaseDate = mediaType === "movie" ? item.release_date : item.first_air_date;
   const genreNames =
     item.genre_ids
@@ -151,18 +168,28 @@ const normalizeItem = (
   };
 };
 
+const dedupeItems = (items: NormalizedItem[]) => {
+  const seen = new Set<string>();
+  const deduped: NormalizedItem[] = [];
+
+  items.forEach(item => {
+    const key = `${item.mediaType}:${item.tmdbId}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(item);
+    }
+  });
+
+  return deduped;
+};
+
 export async function GET() {
   try {
-    const [configuration, movieGenres, tvGenres, trendingMovies, trendingTv, popularMovies, popularTv] =
-      await Promise.all([
-        tmdbFetch<TmdbConfigurationResponse>("/configuration"),
-        tmdbFetch<TmdbGenresResponse>("/genre/movie/list"),
-        tmdbFetch<TmdbGenresResponse>("/genre/tv/list"),
-        tmdbFetch<TmdbListResponse>("/trending/movie/week"),
-        tmdbFetch<TmdbListResponse>("/trending/tv/week"),
-        tmdbFetch<TmdbListResponse>("/movie/popular"),
-        tmdbFetch<TmdbListResponse>("/tv/popular"),
-      ]);
+    const [configuration, movieGenres, tvGenres] = await Promise.all([
+      tmdbFetch<TmdbConfigurationResponse>("/configuration"),
+      tmdbFetch<TmdbGenresResponse>("/genre/movie/list"),
+      tmdbFetch<TmdbGenresResponse>("/genre/tv/list"),
+    ]);
 
     const imageBaseUrl = configuration.images?.secure_base_url || "https://image.tmdb.org/t/p/";
     const genresByType = {
@@ -170,20 +197,52 @@ export async function GET() {
       tv: new Map(tvGenres.genres.map(genre => [genre.id, genre.name])),
     };
 
-    const moviePool = [...trendingMovies.results, ...popularMovies.results];
-    const tvPool = [...trendingTv.results, ...popularTv.results];
-    const featuredSeed = moviePool.find(item => item.backdrop_path && item.overview) || moviePool[0];
+    const fetchPagedItems = async (
+      path: string,
+      mediaType: MediaType,
+      params: Record<string, string | number> = {},
+      pages = DEFAULT_PAGE_COUNT,
+    ) => {
+      const requests = Array.from({ length: pages }, (_, index) =>
+        tmdbFetch<TmdbListResponse>(path, { ...params, page: index + 1 }),
+      );
 
-    if (!featuredSeed) {
-      return NextResponse.json({ message: "TMDB returned no movies." }, { status: 404 });
+      const responses = await Promise.all(requests);
+      return responses.flatMap(response =>
+        response.results.map(item => normalizeItem(item, mediaType, genresByType, imageBaseUrl)),
+      );
+    };
+
+    const [movieDiscover, movieTopRated, movieAnimation, tvDiscover, tvTopRated, tvAnimation] = await Promise.all([
+      fetchPagedItems("/discover/movie", "movie", { sort_by: "popularity.desc" }, 3),
+      fetchPagedItems("/movie/top_rated", "movie", {}, 2),
+      fetchPagedItems("/discover/movie", "movie", { with_genres: ANIMATION_GENRE_ID, sort_by: "popularity.desc" }, 2),
+      fetchPagedItems("/discover/tv", "tv", { sort_by: "popularity.desc" }, 3),
+      fetchPagedItems("/tv/top_rated", "tv", {}, 2),
+      fetchPagedItems("/discover/tv", "tv", { with_genres: ANIMATION_GENRE_ID, sort_by: "popularity.desc" }, 2),
+    ]);
+
+    const pool = dedupeItems([
+      ...movieDiscover,
+      ...movieTopRated,
+      ...movieAnimation,
+      ...tvDiscover,
+      ...tvTopRated,
+      ...tvAnimation,
+    ]);
+
+    if (!pool.length) {
+      return NextResponse.json({ message: "TMDB returned no titles." }, { status: 404 });
     }
 
-    const featuredDetails = await tmdbFetch<TmdbDetails>(`/movie/${featuredSeed.id}`, {
+    const featuredSeed = pool.find(item => item.backdropUrl && item.overview) || pool[0];
+
+    const featuredDetails = await tmdbFetch<TmdbDetails>(`/${featuredSeed.mediaType}/${featuredSeed.tmdbId}`, {
       append_to_response: "credits,reviews",
     });
 
     const featured = {
-      ...normalizeItem(featuredDetails, "movie", genresByType, imageBaseUrl),
+      ...normalizeItem(featuredDetails, featuredSeed.mediaType, genresByType, imageBaseUrl),
       runtime: featuredDetails.runtime ? `${featuredDetails.runtime}m` : null,
       cast:
         featuredDetails.credits?.cast
@@ -196,32 +255,21 @@ export async function GET() {
             profileUrl: imageUrl(imageBaseUrl, "w185", member.profile_path),
           })) || [],
       reviews:
-        featuredDetails.reviews?.results?.slice(0, 2).map(review => ({
+        featuredDetails.reviews?.results?.slice(0, 4).map(review => ({
           id: review.id,
           author: review.author,
           content: review.content.length > 240 ? `${review.content.slice(0, 240)}...` : review.content,
         })) || [],
     };
 
-    const recommendations = [
-      ...moviePool.slice(1).map(item => normalizeItem(item, "movie", genresByType, imageBaseUrl)),
-      ...tvPool.map(item => normalizeItem(item, "tv", genresByType, imageBaseUrl)),
-    ]
-      .filter(item => item.posterUrl || item.backdropUrl)
-      .slice(0, 6);
+    const recommendations = pool.filter(item => item.posterUrl || item.backdropUrl).slice(0, 18);
+    const continueWatching = pool.filter(item => item.posterUrl).slice(0, 8);
 
-    const continueWatching = tvPool
-      .filter(item => item.poster_path)
-      .slice(0, 4)
-      .map(item => normalizeItem(item, "tv", genresByType, imageBaseUrl));
-
+    const preferredGenres = ["Animation", "Thriller", "Drama", "Action", "Comedy"];
     const categories = [
       "Movies",
       "TV Series",
-      ...movieGenres.genres
-        .map(genre => genre.name)
-        .filter(name => ["Animation", "Thriller", "Drama", "Action"].includes(name))
-        .slice(0, 4),
+      ...preferredGenres.filter(genre => movieGenres.genres.some(item => item.name === genre)),
     ];
 
     return NextResponse.json({

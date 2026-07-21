@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { NextPage } from "next";
 import { useTheme } from "next-themes";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import {
   BellIcon,
@@ -288,15 +289,21 @@ const CardRatingButton = ({
 
 /* ─────────────── Main Page ─────────────── */
 const Home: NextPage = () => {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { address: connectedAddress } = useAccount();
   const [data, setData] = useState<WatchHubData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState(0);
-
-  // Dynamic selection state
   const [selectedFeatured, setSelectedFeatured] = useState<WatchHubFeatured | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<WatchHubItem[]>([]);
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [sortOrder] = useState<"alphabetical" | "newest" | "highestRating">("alphabetical");
 
   // Onchain collection / watched local toggle state (optimistic)
   const [inCollection, setInCollection] = useState(false);
@@ -330,29 +337,6 @@ const Home: NextPage = () => {
       setCachedItems(prev => ({ ...itemsMap, ...prev }));
     }
   }, [data]);
-
-  useEffect(() => {
-    if (selectedFeatured) {
-      const item: WatchHubItem = {
-        tmdbId: selectedFeatured.tmdbId,
-        contractId: selectedFeatured.contractId,
-        mediaType: selectedFeatured.mediaType,
-        typeLabel: selectedFeatured.typeLabel,
-        title: selectedFeatured.title,
-        overview: selectedFeatured.overview,
-        year: selectedFeatured.year,
-        genres: selectedFeatured.genres,
-        posterUrl: selectedFeatured.posterUrl,
-        backdropUrl: selectedFeatured.backdropUrl,
-        tmdbRating: selectedFeatured.tmdbRating,
-        tmdbVoteCount: selectedFeatured.tmdbVoteCount,
-      };
-      setCachedItems(prev => ({
-        ...prev,
-        [selectedFeatured.contractId]: item,
-      }));
-    }
-  }, [selectedFeatured]);
 
   // Read user collection from the blockchain
   const { data: userCollectionIds, refetch: refetchCollection } = useScaffoldReadContract({
@@ -426,9 +410,10 @@ const Home: NextPage = () => {
     }
   };
 
+  const featuredSeed = data?.featured;
   const featuredContractId = useMemo(
-    () => BigInt(selectedFeatured?.contractId || data?.featured.contractId || "0"),
-    [selectedFeatured?.contractId, data?.featured.contractId],
+    () => BigInt(featuredSeed?.contractId || "0"),
+    [featuredSeed?.contractId],
   );
 
   const { sponsorWrite: sponsorWriteAsync, isLoading: isMining } = useSponsorWrite();
@@ -438,7 +423,7 @@ const Home: NextPage = () => {
     functionName: "getMovieStats",
     args: [featuredContractId],
     chainId: MONAD_TESTNET_ID,
-    query: { enabled: Boolean(selectedFeatured || data?.featured) },
+    query: { enabled: Boolean(featuredSeed) },
   });
 
   const { data: onchainInCollection } = useScaffoldReadContract({
@@ -446,7 +431,7 @@ const Home: NextPage = () => {
     functionName: "isInCollection",
     args: [connectedAddress, featuredContractId],
     chainId: MONAD_TESTNET_ID,
-    query: { enabled: Boolean(connectedAddress && featuredContractId) },
+    query: { enabled: Boolean(connectedAddress && featuredSeed) },
   });
 
   const { data: onchainIsWatched } = useScaffoldReadContract({
@@ -454,7 +439,7 @@ const Home: NextPage = () => {
     functionName: "isWatched",
     args: [connectedAddress, featuredContractId],
     chainId: MONAD_TESTNET_ID,
-    query: { enabled: Boolean(connectedAddress && featuredContractId) },
+    query: { enabled: Boolean(connectedAddress && featuredSeed) },
   });
 
   useEffect(() => {
@@ -473,6 +458,7 @@ const Home: NextPage = () => {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || "Unable to load WatchHub.");
       setData(payload);
+      setSelectedFeatured(payload.featured);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load WatchHub.");
     } finally {
@@ -485,31 +471,64 @@ const Home: NextPage = () => {
   }, []);
 
   useEffect(() => {
-    if (data?.featured) {
-      setSelectedFeatured(data.featured);
-    }
-  }, [data]);
+    const titleParam = searchParams.get("title");
+    if (!titleParam || !data) return;
 
-  const selectTitle = async (tmdbId: number, mediaType: "movie" | "tv") => {
+    const [mediaType, tmdbId] = titleParam.split("-");
+    if (!mediaType || !tmdbId) return;
+
+    const parsedId = Number(tmdbId);
+    if (!Number.isFinite(parsedId)) return;
+
     setDetailsLoading(true);
-    try {
-      const res = await fetch(`/api/tmdb/details?id=${tmdbId}&mediaType=${mediaType}`);
-      const payload = await res.json();
-      if (res.ok && payload.details) {
-        setSelectedFeatured(payload.details);
-        // Scroll smoothly to top of viewport/main content area
-        const container = document.getElementById("main-content-scroll");
-        if (container) {
-          container.scrollTo({ top: 0, behavior: "smooth" });
-        } else {
-          window.scrollTo({ top: 0, behavior: "smooth" });
+    fetch(`/api/tmdb/details?id=${parsedId}&mediaType=${mediaType}`)
+      .then(async res => {
+        const payload = await res.json();
+        if (res.ok && payload.details) {
+          setSelectedFeatured(payload.details);
+          setSearchQuery("");
+          setSearchResults([]);
+          setIsSearchActive(false);
         }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setDetailsLoading(false);
+      })
+      .catch(() => undefined)
+      .finally(() => setDetailsLoading(false));
+  }, [searchParams, data]);
+
+  const searchTitles = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setSearchError(null);
+      setIsSearchActive(false);
+      return;
     }
+
+    setSearchQuery(query);
+    setIsSearchLoading(true);
+    setSearchError(null);
+    try {
+      const response = await fetch(`/api/tmdb/search?query=${encodeURIComponent(query)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || "Search failed.");
+      setSearchResults(payload.results || []);
+      setIsSearchActive(true);
+    } catch (searchErr) {
+      setSearchError(searchErr instanceof Error ? searchErr.message : "Search failed.");
+      setSearchResults([]);
+      setIsSearchActive(true);
+    } finally {
+      setIsSearchLoading(false);
+    }
+  };
+
+  const openTitleDetails = (item: WatchHubItem) => {
+    setSelectedFeatured({
+      ...item,
+      runtime: null,
+      cast: [],
+      reviews: [],
+    } as WatchHubFeatured);
+    router.push(`/?title=${item.mediaType}-${item.tmdbId}`);
   };
 
   const fetchReviews = useCallback(async (contractId: string) => {
@@ -529,7 +548,6 @@ const Home: NextPage = () => {
     const activeId = selectedFeatured?.contractId || data?.featured?.contractId;
     if (activeId) {
       fetchReviews(activeId);
-      // reset optimistic toggle state when featured title changes
       setInCollection(false);
       setIsWatchedLocal(false);
       setReviewText("");
@@ -654,10 +672,20 @@ const Home: NextPage = () => {
   const filteredRecommendations = (() => {
     if (activeCategory === 0) return deduped.filter(i => i.mediaType === "movie");
     if (activeCategory === 1) return deduped.filter(i => i.mediaType === "tv");
-    const genre = data.categories[activeCategory]; // e.g. "Action"
+    const genre = data.categories[activeCategory];
     if (!genre) return deduped;
     return deduped.filter(i => i.genres.some(g => g.toLowerCase() === genre.toLowerCase()));
   })();
+
+  const sortedRecommendations = [...filteredRecommendations].sort((a, b) => {
+    if (sortOrder === "highestRating") {
+      return (b.tmdbRating || 0) - (a.tmdbRating || 0);
+    }
+    if (sortOrder === "newest") {
+      return Number(b.year || 0) - Number(a.year || 0);
+    }
+    return a.title.localeCompare(b.title);
+  });
 
   const sectionLabel = data.categories[activeCategory] ?? "You Might Like";
 
@@ -742,7 +770,7 @@ const Home: NextPage = () => {
                 {data.continueWatching.map(item => (
                   <button
                     key={`${item.mediaType}-${item.tmdbId}`}
-                    onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                    onClick={() => openTitleDetails(item)}
                     className="grid min-h-12 w-full grid-cols-[48px_minmax(0,1fr)_32px] items-center gap-3 text-left focus-visible:outline-2 focus-visible:outline-primary rounded-xl p-1 hover:bg-base-200 transition"
                   >
                     <MediaImage src={item.posterUrl} alt="" className="h-12 w-12 rounded-xl object-cover" />
@@ -789,13 +817,31 @@ const Home: NextPage = () => {
               />
               <input
                 type="search"
-                placeholder="Search"
+                value={searchQuery}
+                onChange={e => {
+                  const nextValue = e.target.value;
+                  setSearchQuery(nextValue);
+                  if (!nextValue.trim()) {
+                    setSearchResults([]);
+                    setSearchError(null);
+                    setIsSearchActive(false);
+                    return;
+                  }
+                  void searchTitles(nextValue);
+                }}
+                placeholder="Search movies & series"
                 className="h-11 w-full rounded-full border border-base-300 bg-base-200 pl-12 pr-4 text-sm font-medium text-neutral placeholder:text-neutral/45 focus:border-primary focus:bg-base-100 focus:outline-none focus:ring-2 focus:ring-primary/25 transition"
               />
             </label>
 
             {/* Search icon only on mobile */}
-            <button className="grid size-10 place-items-center rounded-full border border-base-300 bg-base-200 text-neutral sm:hidden">
+            <button
+              onClick={() => {
+                if (!searchQuery.trim()) return;
+                void searchTitles(searchQuery);
+              }}
+              className="grid size-10 place-items-center rounded-full border border-base-300 bg-base-200 text-neutral sm:hidden"
+            >
               <MagnifyingGlassIcon className="size-5" aria-hidden="true" />
             </button>
 
@@ -844,6 +890,56 @@ const Home: NextPage = () => {
 
           {/* Scrollable page body */}
           <main id="main-content-scroll" className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pb-24 lg:pb-6">
+            {isSearchActive && (
+              <section className="rounded-3xl border border-base-300 bg-base-100 p-4 sm:p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-black text-neutral">Search results</h2>
+                    <p className="text-xs font-semibold text-neutral/55">Showing matches for “{searchQuery}”</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSearchQuery("");
+                      setSearchResults([]);
+                      setSearchError(null);
+                      setIsSearchActive(false);
+                    }}
+                    className="text-sm font-bold text-primary"
+                  >
+                    Clear
+                  </button>
+                </div>
+                {isSearchLoading ? (
+                  <div className="flex items-center gap-3 text-sm font-semibold text-neutral/60">
+                    <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    Searching TMDB…
+                  </div>
+                ) : searchError ? (
+                  <p className="text-sm font-semibold text-error">{searchError}</p>
+                ) : searchResults.length === 0 ? (
+                  <p className="text-sm font-semibold text-neutral/55">No results yet. Try another title.</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {searchResults.map(item => (
+                      <button
+                        key={`${item.mediaType}-${item.tmdbId}`}
+                        onClick={() => openTitleDetails(item)}
+                        className="flex items-center gap-3 rounded-2xl border border-base-300 bg-base-200 p-3 text-left transition hover:bg-base-300"
+                      >
+                        <MediaImage src={item.posterUrl} alt="" className="h-16 w-12 rounded-xl object-cover" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-neutral">{item.title}</p>
+                          <p className="truncate text-xs font-semibold text-neutral/55">
+                            {item.year} • {item.typeLabel} • TMDB {item.tmdbRating}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* ── Hero / Featured ── */}
             <section className="relative isolate overflow-hidden rounded-3xl bg-neutral text-white min-h-[340px] sm:min-h-[420px]">
               {/* Mining or Loading indicator overlay */}
@@ -1020,10 +1116,10 @@ const Home: NextPage = () => {
                 </div>
               ) : (
                 <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-                  {filteredRecommendations.slice(0, 12).map(item => (
+                  {sortedRecommendations.slice(0, 16).map(item => (
                     <article
                       key={`${item.mediaType}-${item.tmdbId}`}
-                      onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                      onClick={() => openTitleDetails(item)}
                       className="group overflow-hidden rounded-2xl bg-neutral text-white will-change-transform cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
                     >
                       <div className="relative aspect-[1.42] overflow-hidden">
@@ -1098,7 +1194,7 @@ const Home: NextPage = () => {
                   {collectionList.map(item => (
                     <article
                       key={`collection-${item.mediaType}-${item.tmdbId}`}
-                      onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                      onClick={() => openTitleDetails(item)}
                       className="group overflow-hidden rounded-2xl bg-neutral text-white cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
                     >
                       <div className="relative aspect-[0.7] overflow-hidden">
@@ -1147,7 +1243,7 @@ const Home: NextPage = () => {
                   {watchedList.map(item => (
                     <article
                       key={`watched-${item.mediaType}-${item.tmdbId}`}
-                      onClick={() => selectTitle(item.tmdbId, item.mediaType)}
+                      onClick={() => openTitleDetails(item)}
                       className="group overflow-hidden rounded-2xl bg-neutral text-white cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
                     >
                       <div className="relative aspect-[0.7] overflow-hidden">
@@ -1433,7 +1529,7 @@ const Home: NextPage = () => {
                     <button
                       key={`${item.mediaType}-${item.tmdbId}`}
                       onClick={() => {
-                        selectTitle(item.tmdbId, item.mediaType);
+                        openTitleDetails(item);
                         setAiModalOpen(false);
                       }}
                       className="flex w-full items-center gap-3 rounded-2xl border border-base-300 bg-base-100 p-2 hover:bg-base-200 transition text-left focus:outline-none focus:ring-2 focus:ring-primary/40"
