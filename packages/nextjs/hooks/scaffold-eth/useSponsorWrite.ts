@@ -61,7 +61,7 @@ export const useSponsorWrite = () => {
         const data = encodeFunctionData({
           abi,
           functionName: options.functionName as any,
-          args: callArgs,
+          args: callArgs as any,
         });
 
         notificationId = notification.loading("Sending sponsored transaction...");
