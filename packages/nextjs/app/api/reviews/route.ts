@@ -21,13 +21,22 @@ export async function GET(req: NextRequest) {
 
   try {
     const url = `${SUPABASE_URL}/rest/v1/watchhub_reviews?movie_id=eq.${encodeURIComponent(movieId)}&order=created_at.desc&limit=20`;
-    const res = await fetch(url, { headers: supabaseHeaders() });
-    if (!res.ok) throw new Error(`Supabase GET failed: ${res.status}`);
-    const reviews = await res.json();
-    return NextResponse.json({ reviews });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    try {
+      const res = await fetch(url, { headers: supabaseHeaders(), signal: controller.signal });
+      if (!res.ok) throw new Error(`Supabase GET failed: ${res.status}`);
+      const reviews = await res.json();
+      return NextResponse.json({ reviews });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch reviews";
-    return NextResponse.json({ message }, { status: 500 });
+    // Gracefully return empty reviews on timeout or network error
+    if (err instanceof Error && err.name === "AbortError") {
+      return NextResponse.json({ reviews: [] });
+    }
+    return NextResponse.json({ reviews: [] });
   }
 }
 

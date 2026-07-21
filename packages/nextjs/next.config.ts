@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
         hostname: "image.tmdb.org",
       },
     ],
+    unoptimized: process.env.NODE_ENV === "development",
   },
   typescript: {
     ignoreBuildErrors: process.env.NEXT_PUBLIC_IGNORE_BUILD_ERROR === "true",
